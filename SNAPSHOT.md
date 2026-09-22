@@ -6,8 +6,8 @@ host.
 
 | | |
 |---|---|
-| Plugin version | `0.41.0` |
-| Source commit | `92cc8c02814f4b24d930f160a97d27366a3ceaef` |
+| Plugin version | `0.42.0` |
+| Source commit | `0c6f17494e2c84291e303417ae13b731cb65a965` |
 | Taken on | 2026-09-22 |
 
 **Do not send changes here.** They would be overwritten by the next snapshot, silently, because
@@ -25,7 +25,7 @@ From a clean checkout of the source repository:
 ```sh
 scripts/snapshot-sdd.sh <path-to-this-checkout>
 git -C <path-to-this-checkout> add -A
-git -C <path-to-this-checkout> commit -m "snapshot: sdd 0.41.0"
+git -C <path-to-this-checkout> commit -m "snapshot: sdd 0.42.0"
 ```
 
 It refuses a dirty source tree, because a recorded commit that does not contain what was published

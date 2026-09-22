@@ -130,9 +130,21 @@ Say so in one line and carry on. Do not ask a question with no consequence.
 <Verbatim. Not summarised.>
 ```
 
-**Keep everything above the appendix under 40 lines.** A handoff nobody reads is worse than none,
-and the failure here is dumping the session rather than choosing from it. The appendix is exempt:
-truncating the one thing that cannot be recovered would defeat the point.
+**Keep the narrative under 60 lines: `Where I am`, `Decided`, `Tried and abandoned`,
+`Next action` and `Read these`.** A handoff nobody reads is worse than none, and the failure here
+is dumping the session rather than choosing from it.
+
+**`In flight` and the appendix do not count**, and the reason is not generosity. Those two are
+bounded by what is actually running: nobody has forty things in flight, and a brief is as long as
+it is. The narrative is the part that can absorb an entire session if nothing stops it, so it is
+the part worth capping. A cap on the total punishes the sections that cannot bloat in order to
+discipline the one that can, and what it squeezes first is the *reasons* — which are the whole
+point, because a decision recorded without its reason gets re-litigated at the same cost as not
+recording it.
+
+The first real use of this command measured 39 lines of narrative for a session spanning most of a
+day and three phases, with nothing in flight. Treat 60 as roughly half again as much headroom as a
+busy session needs, and as a number one run is weak evidence for.
 
 Omit any section that would be empty. An empty heading reads as a gap in the record rather than an
 absence of the thing.

@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "The sdd spec-driven development workflow for Claude Code, as a one-plugin marketplace.",
-    "version": "0.41.0"
+    "version": "0.42.0"
   },
   "plugins": [
     {

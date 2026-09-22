@@ -1,0 +1,48 @@
+{
+  "name": "/sdd:converge --behaviour: finds the unmet criterion the path check confirmed",
+  "fixture": "specrepo-behaviour-gap.sh",
+  "prompt": "/sdd:converge .specs/docs/tasks --phase 1 --behaviour",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Task",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)",
+    "Bash(python3:*)",
+    "Bash(mktemp:*)",
+    "Bash(rm:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "names-the-criterion",
+      "must_match": "(?i)AC2",
+      "why": "the point of criterion IDs is that a finding can name one. A report saying the limit is unhandled without citing AC2 leaves the reader to work out which requirement is unmet, which is the state this whole phase set out to end"
+    },
+    {
+      "id": "classifies-the-gap",
+      "must_match": "(?i)(partial|contradict)",
+      "why": "the parameter is accepted and discarded, so the gap is partial or contradicts depending on how strictly you read it. Either is defensible; neither missing nor unrequested is, and a finding with no gap type is not classified at all"
+    },
+    {
+      "id": "did-not-fault-the-met-criterion",
+      "must_not_match": "(?is)AC1[^\\n]{0,120}(missing|contradict|not (met|implemented|satisfied)|gap)",
+      "why": "AC1 is genuinely met: list_widgets() returns all four. A run that flags both criteria has not checked either, and a fixture where everything is broken would hide that",
+      "violating_example": "1.01/AC1 missing: nothing implements the widget listing"
+    },
+    {
+      "id": "cites-file-evidence",
+      "must_match": "(?i)app/widgets\\.py|list_widgets",
+      "why": "a finding with no evidence is the command guessing, and it arrives in the same format as a measured one. The file or the function has to be named"
+    },
+    {
+      "id": "did-not-write-before-asking",
+      "must_not_match": "(?i)(I (have )?(updated|edited|reopened|changed) the task file|status (has been|was) (changed|updated|flipped)|marked it (in progress|not started))",
+      "why": "converge proposes and waits, which was a deliberate choice against manufacturing confident claims. The behavioural pass keeps it, and its evidence is weaker than the path check's, not stronger",
+      "violating_example": "I have updated the task file: Status is now In Progress."
+    }
+  ]
+}

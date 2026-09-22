@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Severity palette and timeline density</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<main>
+<p class="tag">Mockup, not the product</p>
+<h1>Severity palette and timeline density</h1>
+<p class="lede">Task 2.06 is blocked on the first of these. Pick one from each group and send me
+the result; the Pick buttons build the text for you. Nothing is sent anywhere by this page.</p>
+
+<h2>Which severity palette?</h2>
+<p class="why">Every severity is also a word on the page, so colour never carries the meaning
+alone. It still has to pass contrast and stay distinguishable for the common colour vision
+deficiencies. All four below do; they differ in how loud they are.</p>
+
+<section data-pick-group="severity-palette" data-pick-label="Severity palette">
+  <article data-pick-option="traffic-light">
+    <h3>Traffic light</h3>
+    <div class="chips">
+      <span class="chip" style="color:#2e7a33">Resolved</span>
+      <span class="chip" style="color:#b8860b">Monitoring</span>
+      <span class="chip" style="color:#c25e00">Partial outage</span>
+      <span class="chip" style="color:#c0392b">Major outage</span>
+    </div>
+    <p>What everyone expects, which means nobody has to learn it. Also the loudest: a partial
+      outage reads nearly as alarming as a major one on a phone in daylight.</p>
+  </article>
+  <article data-pick-option="muted-ember">
+    <h3>Muted ember</h3>
+    <div class="chips">
+      <span class="chip" style="color:#3d7d42">Resolved</span>
+      <span class="chip" style="color:#8a6a1f">Monitoring</span>
+      <span class="chip" style="color:#b4630f">Partial outage</span>
+      <span class="chip" style="color:#a8352c">Major outage</span>
+    </div>
+    <p>The same ordering, desaturated. Reads calmer during a long incident, which is when the page
+      is refreshed most. Slightly harder to tell partial from major at a glance.</p>
+  </article>
+  <article data-pick-option="blue-to-red">
+    <h3>Blue to red</h3>
+    <div class="chips">
+      <span class="chip" style="color:#3e7cb1">Resolved</span>
+      <span class="chip" style="color:#5b8c5a">Monitoring</span>
+      <span class="chip" style="color:#c2803d">Partial outage</span>
+      <span class="chip" style="color:#b1281f">Major outage</span>
+    </div>
+    <p>Avoids the green/red pairing entirely, so it survives deuteranopia without relying on the
+      words at all. Costs the instant recognition of green meaning fine.</p>
+  </article>
+  <article data-pick-option="monochrome-plus-one">
+    <h3>Monochrome plus one</h3>
+    <div class="chips">
+      <span class="chip" style="color:#7d7a75">Resolved</span>
+      <span class="chip" style="color:#7d7a75">Monitoring</span>
+      <span class="chip" style="color:#b4630f">Partial outage</span>
+      <span class="chip" style="color:#b1281f">Major outage</span>
+    </div>
+    <p>Only the two states you can do something about get colour. The quietest option and the most
+      opinionated: it says resolved and monitoring are not news.</p>
+  </article>
+</section>
+
+<h2>How dense should the timeline be?</h2>
+<p class="why">A long incident collects a lot of updates. This is about what a reader sees before
+scrolling, at 360 px.</p>
+
+<section data-pick-group="timeline-density" data-pick-label="Timeline density">
+  <article data-pick-option="all-updates">
+    <h3>Every update, always</h3>
+    <p>Nothing hidden. A twelve-hour incident is a long scroll, and the reader can see it all.</p>
+  </article>
+  <article data-pick-option="latest-three">
+    <h3>Latest three, rest behind a toggle</h3>
+    <p>The three most recent, then "show 9 earlier updates". Keeps the incident above the fold.
+      Needs a toggle, which is the page's first piece of interactivity.</p>
+  </article>
+  <article data-pick-option="latest-only-when-open">
+    <h3>Latest only while open, all when resolved</h3>
+    <p>During an incident the last word is all that matters; afterwards the page is a record. No
+      toggle needed, but the page changes shape as an incident closes.</p>
+  </article>
+</section>
+
+<h2>Incident card shape</h2>
+<section data-pick-group="card-shape" data-pick-label="Incident card shape">
+  <article data-pick-option="bordered-card">
+    <h3>Bordered card</h3>
+    <p>What it does now. Each incident is a bounded box, which separates them clearly and costs
+      horizontal room at 360 px.</p>
+  </article>
+  <article data-pick-option="rule-separated">
+    <h3>Separated by a rule</h3>
+    <p>No box, a hairline between incidents. Gains back the padding on a phone; the incidents feel
+      like one list rather than several objects.</p>
+  </article>
+</section>
+
+<footer>Mockup for phase 2, published 2026-09-12. The real page is produced by
+<code>beacon-cli render</code>.</footer>
+</main>
+<script src="picks.js" defer></script>
+</body>
+</html>

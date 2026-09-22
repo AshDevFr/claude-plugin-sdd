@@ -1,0 +1,12 @@
+{
+  "name": "SELFTEST: a grader that cannot pass",
+  "fixture": "feature.sh",
+  "prompt": "/sdd:commit-msg",
+  "allowed_tools": ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git status:*)"],
+  "runs": 1,
+  "tags": ["selftest"],
+  "graders": [
+    { "id": "impossible", "must_match": "ZZZ-THIS-STRING-WILL-NEVER-APPEAR-ZZZ",
+      "why": "proves the runner reports red. A suite that has never failed is one nobody knows works." }
+  ]
+}

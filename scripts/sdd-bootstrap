@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Prepare the current project to work with this suite: a CLAUDE.md if it has none, and the
+# permissions the suite cannot ship.
+#
+# Why the permissions half exists. A plugin cannot carry permissions: a plugin-level settings.json
+# with permissions.allow was measured to be ignored entirely. And the spec-repo commit policy is
+# enforced by a Stop hook that blocks a turn until `.specs` is committed, so a session whose
+# permission layer refuses `git add` and `git commit` writes spec work it is then unable to commit.
+# Measured on a second machine: the files were written, every git write was denied, and the guard
+# demanded the one action the session could not take. A reader hitting that concludes the suite is
+# broken rather than unconfigured.
+#
+# Why the CLAUDE.md half exists. Path resolution reads the `## Task Workflow` keys. Without them a
+# project has no configured spec path and every command has to ask.
+#
+# Idempotent by construction: it adds what is missing and reports what it left alone. Run it twice
+# and the second run changes nothing.
+#
+# Needs bash, git and jq.
+set -uo pipefail
+
+die() { printf 'sdd-bootstrap: %s\n' "$1" >&2; exit 1; }
+
+with_agy=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-agy) with_agy=1 ;;
+    -h|--help)
+      cat <<'USAGE'
+sdd-bootstrap [--with-agy]
+
+Prepares the project you run it in:
+  - writes CLAUDE.md from a template, only if there is none or it is empty
+  - adds Bash(git:*) to .claude/settings.json, which the spec-repo commit policy needs
+
+  --with-agy   also add the Antigravity grants: Bash(agy-consult:*) allowed, and
+               agy's --dangerously-skip-permissions form denied. Only useful if
+               you have the agy CLI and want the delegation adapter.
+
+Changes nothing that already exists. Never touches user-scope settings.
+USAGE
+      exit 0 ;;
+    -*) die "unknown option: $arg" ;;
+    *)  die "unexpected argument: $arg" ;;
+  esac
+done
+
+command -v jq >/dev/null 2>&1 || die "jq is required, and every hook in this suite needs it too"
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository, so there is no project to prepare"
+
+project=$(basename "$root")
+changed=0
+kept=0
+say()  { printf '  %s\n' "$1"; }
+note() { printf '  kept  %s\n' "$1"; kept=$((kept+1)); }
+did()  { printf '  ADDED %s\n' "$1"; changed=$((changed+1)); }
+
+printf 'sdd-bootstrap: %s\n' "$root"
+
+# ---- refuse before changing anything --------------------------------------
+# A malformed file is reported and left alone: it is a record of decisions somebody made, and a
+# bootstrap script that eats an unparseable config is worse than one that refuses. Checked up front
+# rather than when it is reached, so a refusal leaves the project exactly as it was instead of
+# writing CLAUDE.md and then stopping.
+settings="$root/.claude/settings.json"
+if [ -e "$settings" ] && ! jq -e . "$settings" >/dev/null 2>&1; then
+  say "REFUSED .claude/settings.json is not valid JSON. Fix or move it; nothing was changed."
+  exit 1
+fi
+
+# ---- CLAUDE.md ------------------------------------------------------------
+# Only when absent or empty. Overwriting a hand-written one would destroy the thing it is meant to
+# provide, and "empty" is the only safe definition of "needs writing".
+cmd="$root/CLAUDE.md"
+if [ -s "$cmd" ]; then
+  note "CLAUDE.md exists and is not empty"
+else
+  # Derive the spec remote from the project's own origin rather than hardcoding a host, so this
+  # works in a fork. `owner/name.git` becomes `owner/name-specs.git` on the same host.
+  origin=$(git -C "$root" remote get-url origin 2>/dev/null || true)
+  if [ -n "$origin" ]; then
+    spec_remote=$(printf '%s' "$origin" | sed -E 's/\.git$//')-specs.git
+  else
+    spec_remote="<set this: the remote for ${project}'s spec repo>"
+  fi
+  cat > "$cmd" <<EOF
+# $project
+
+<!-- Written by sdd-bootstrap. Replace this section with what the project actually is. -->
+
+## Task Workflow
+
+- **Spec Repo**: \`.specs/\` (remote \`$spec_remote\`)
+- **PRD**: \`.specs/docs/PRD.md\`
+- **Phase Specs**: \`.specs/docs/specs/phase-N_<title>.md\`
+- **Task Directory**: \`.specs/docs/tasks/phase-N/\`
+- **Task File Pattern**: \`N.NN-descriptive-name.md\`
+EOF
+  did "CLAUDE.md, with the Task Workflow keys path resolution reads"
+fi
+
+# ---- permissions ----------------------------------------------------------
+# Appended, never rewritten: an existing entry keeps its place and unrelated keys are untouched, so
+# this cannot quietly reorder or drop a decision someone made deliberately.
+want_allow=("Bash(git:*)")
+want_deny=()
+if [ "$with_agy" -eq 1 ]; then
+  # The consult script, not agy. A rule matches only the command the Bash tool runs, so the
+  # adapter needs nothing for agy itself, and `Bash(agy:*)` would admit piping any readable file
+  # into agy. A bare name, because a plugin's bin/ is on PATH and an absolute path would differ
+  # between machines.
+  want_allow+=("Bash(agy-consult:*)")
+  want_deny+=("Bash(agy --dangerously-skip-permissions:*)")
+fi
+
+mkdir -p "$root/.claude"
+[ -e "$settings" ] || printf '{}\n' > "$settings"
+
+for rule in "${want_allow[@]}"; do
+  if jq -e --arg r "$rule" '(.permissions.allow // []) | index($r) != null' "$settings" >/dev/null 2>&1; then
+    note "allow $rule"
+  else
+    tmp=$(mktemp) || die "could not create a temporary file"
+    jq --arg r "$rule" '.permissions.allow = ((.permissions.allow // []) + [$r])' "$settings" > "$tmp" \
+      && mv "$tmp" "$settings" || { rm -f "$tmp"; die "could not write $settings"; }
+    did "allow $rule"
+  fi
+done
+for rule in "${want_deny[@]+"${want_deny[@]}"}"; do
+  if jq -e --arg r "$rule" '(.permissions.deny // []) | index($r) != null' "$settings" >/dev/null 2>&1; then
+    note "deny  $rule"
+  else
+    tmp=$(mktemp) || die "could not create a temporary file"
+    jq --arg r "$rule" '.permissions.deny = ((.permissions.deny // []) + [$r])' "$settings" > "$tmp" \
+      && mv "$tmp" "$settings" || { rm -f "$tmp"; die "could not write $settings"; }
+    did "deny  $rule"
+  fi
+done
+
+# Read it back rather than trusting the writes. A settings file this script left unparseable would
+# disable every rule in it, silently.
+jq -e . "$settings" >/dev/null 2>&1 || die "wrote $settings and it is no longer valid JSON; restore it from git"
+
+printf '\n%s\n' "sdd-bootstrap: $changed added, $kept already present"
+
+# ---- what this cannot do --------------------------------------------------
+# Both are deliberate. Saying so is the difference between a configured project and a reader
+# wondering why the rules they can see are not applying.
+cat <<'LIMITS'
+
+Two things this script will not do for you:
+
+  1. Trust the workspace. Until you run Claude Code interactively here once and accept the
+     trust dialog, the permissions above are IGNORED, not applied. The session says so in a
+     warning that is easy to miss.
+  2. Grant anything at user scope. Editing ~/.claude/settings.json would change every project
+     on this machine, which is not a side effect a bootstrap script should have.
+
+If CLAUDE.md was just created and your global gitignore excludes CLAUDE.md, it is untracked and
+anyone cloning gets none of it. Add `!CLAUDE.md` to this repo's .gitignore to override that. Not
+done automatically, because it adds a tracked file to your repository.
+LIMITS

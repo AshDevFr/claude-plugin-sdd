@@ -1,0 +1,20 @@
+status.html
+__pycache__/
+*.pyc
+
+# The nested spec repo. It is a separate git repository with its own remote, so the product's
+# history never carries planning artifacts.
+.specs/
+
+# Agent scratch state. Never committed, and named explicitly rather than left to a global
+# ignore, so the rule holds on a machine that has no global ignore at all. An earlier version
+# of this file deliberately re-included it so the dashboard could draw a progress bar from the
+# ledger; the bar is not worth putting one agent's working notes into a repository that is
+# meant to be read by other people.
+.superpowers/
+
+# CLAUDE.md is commonly ignored by a global ignore file, and this project is meant to be cloned:
+# its ## Task Workflow section is what resolve-task-paths reads to find the PRD, the specs and the
+# tasks. Without this re-include the file stays on the author's disk and every clone gets a
+# project whose pipeline resolves nothing, which is the failure this repository exists to teach.
+!CLAUDE.md

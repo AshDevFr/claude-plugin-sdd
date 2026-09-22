@@ -1,0 +1,43 @@
+{
+  "name": "commit-msg: feature change",
+  "fixture": "feature.sh",
+  "prompt": "/sdd:commit-msg",
+  "allowed_tools": [
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git status:*)"
+  ],
+  "graders": [
+    {
+      "id": "conventional-subject",
+      "must_match": "(feat|fix|docs|refactor|test|chore|perf|style|build|ci)(\\([^)]+\\))?!?: .+",
+      "why": "its rules require a conventional-commit subject"
+    },
+    {
+      "id": "no-attribution",
+      "must_not_match": "(?im)^\\s*(co-authored-by|generated with|\ud83e\udd16)",
+      "why": "its rules forbid an attribution trailer; anchored to a line start so a prose mention of the rule is not a violation"
+    },
+    {
+      "id": "no-counts",
+      "must_not_match": "(?i)\\b(one|two|three|four|five|six|[0-9]+)\\s+(new\\s+)?(tests?|files?|lines?|functions?|endpoints?)\\b",
+      "why": "its rules forbid counts of tests or lines changed"
+    },
+    {
+      "id": "no-plan-identifiers",
+      "must_not_match": "(?i)(phase[- ]?[0-9]|task [0-9]+\\.[0-9]|\\.specs/)",
+      "why": "plan identifiers are dead pointers outside the spec repo"
+    },
+    {
+      "id": "has-a-body",
+      "must_match": "(?s): .+\\n\\s*\\n\\s*\\S",
+      "why": "a subject with no body explains nothing"
+    },
+    {
+      "id": "did-not-commit",
+      "must_not_match": "(?i)(I have committed|I committed|commit created|\\[main [0-9a-f]{7}\\])",
+      "why": "it must print the message and stop, not commit"
+    }
+  ],
+  "extract": "fenced"
+}

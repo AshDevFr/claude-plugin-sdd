@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Music for calm play</title>
+</head>
+<body>
+
+<!-- label from data-pick-label; option labels from their headings -->
+<section data-pick-group="music-warm" data-pick-label="Music: the warm half (spring and summer)">
+  <article data-pick-option="with-the-wind"><h3>With the wind (seamless)</h3><p>A 72 s loop.</p></article>
+  <article data-pick-option="sun-and-moon"><h3>Sun and moon</h3><p>About 2 min 50.</p></article>
+</section>
+
+<!-- group label falls back to its own heading, not to an option's heading -->
+<section data-pick-group="music-cold">
+  <h2>Music: the cold half (autumn and winter)</h2>
+  <article data-pick-option="brume"><h3>Brume</h3></article>
+  <article data-pick-option="arctica"><h3>Arctica</h3></article>
+</section>
+
+<!-- multi-select, and an option with no heading falls back to its text -->
+<section data-pick-group="open-sound" data-pick-label="Open: the sheet rises" data-pick-multi>
+  <div data-pick-option="whoosh-light">Whoosh, basic light organic</div>
+  <div data-pick-option="whoosh-thump">Whoosh, basic thump</div>
+</section>
+
+<!-- note box suppressed here -->
+<section data-pick-group="close-sound" data-pick-label="Close" data-pick-note="off">
+  <div data-pick-option="thump">Thump</div>
+</section>
+
+<!-- left unpicked on purpose: it must appear under "Not picked yet" -->
+<section data-pick-group="menu-music" data-pick-label="Music: menu and intro (quieter)">
+  <div data-pick-option="onirik">Onirik (seamless)</div>
+</section>
+
+<!-- rejected: duplicate group id, bad group id, duplicate option id -->
+<section data-pick-group="music-warm"><div data-pick-option="dupe">Duplicate group</div></section>
+<section data-pick-group="Bad_Id"><div data-pick-option="x">Bad group id</div></section>
+<section data-pick-group="dupe-opts" data-pick-label="Duplicate options">
+  <div data-pick-option="same">First</div>
+  <div data-pick-option="same">Second</div>
+</section>
+
+<script src="picks.js" defer></script>
+<script defer>
+// Runs after picks.js because deferred scripts run in document order. Drives the page the way
+// a reader would, then parks the generated prompt somewhere --dump-dom can see it: a textarea's
+// value never appears in the serialised DOM.
+window.addEventListener('load', function () {
+  function pick(id) {
+    var o = document.querySelector('[data-pick-option="' + id + '"] .sdd-pick-btn');
+    if (o) o.click();
+  }
+  pick('with-the-wind');
+  pick('brume');
+  pick('whoosh-light');
+  pick('whoosh-thump');   // multi: both stay
+  pick('sun-and-moon');   // single: replaces with-the-wind
+  pick('with-the-wind');  // single: replaces sun-and-moon again
+  pick('thump');
+
+  var note = document.querySelector('[data-pick-group="music-cold"] .sdd-pick-note textarea');
+  note.value = 'N'.repeat(400);
+  note.dispatchEvent(new Event('input', { bubbles: true }));
+
+  var out = document.createElement('pre');
+  out.id = 'sdd-test-out';
+  out.hidden = true;
+  out.textContent = document.querySelector('.sdd-picks-text').value;
+  document.body.appendChild(out);
+
+  var meta = document.createElement('pre');
+  meta.id = 'sdd-test-meta';
+  meta.hidden = true;
+  meta.textContent = [
+    'groups=' + document.querySelectorAll('.sdd-pick-group').length,
+    'notes=' + document.querySelectorAll('.sdd-pick-note').length,
+    'notelen=' + document.querySelector('[data-pick-group="music-cold"] .sdd-pick-note textarea').value.length,
+    'picked=' + document.querySelectorAll('[data-picked="true"]').length,
+    'summary=' + document.querySelector('.sdd-picks-summary').textContent
+  ].join('\n');
+  document.body.appendChild(meta);
+});
+</script>
+</body>
+</html>

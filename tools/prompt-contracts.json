@@ -1,0 +1,311 @@
+{
+  "_comment": [
+    "Sentences whose absence was a defect, pinned so a rewrite cannot drop one quietly.",
+    "",
+    "Read by scripts/check-prompt-contracts.sh, which explains the mechanism. This file holds",
+    "the judgements. Every entry here earned its place by going missing, or by being the",
+    "sentence a measured failure turned out to hinge on; none was added because it read as",
+    "important. That is the standard for adding one.",
+    "",
+    "Patterns are extended regular expressions matched line by line, so a phrase that wraps in",
+    "the source needs the half that fits on one line. Keep them short. A pattern long enough to",
+    "span a sentence fires on every legitimate rewrite, and a check that cries wolf is removed.",
+    "",
+    "Retiring a contract is allowed and is a normal thing to do. Do it in the same commit as the",
+    "rewrite that retires it, and say why here."
+  ],
+  "contracts": {
+    "commands/implement.md": [
+      {
+        "pattern": "as its own Bash call",
+        "why": "Complete is supposed to mean the Verification command passed, and a pipe, a `|| true` or an `&&` chain hands its exit status to another program. The Stop hook checks for the same shape, so losing this sentence produces tasks the hook then refuses, with no clue why."
+      },
+      {
+        "pattern": "marker is a hard stop",
+        "why": "a `[NEEDS CLARIFICATION]` marker exists because whoever wrote the document declined to guess. Without this, implementation guesses instead, and the guess arrives as working code nobody reviews as a decision."
+      },
+      {
+        "pattern": "Which direction does the sync go",
+        "why": "a behaviour change edits the task file first; a refactor edits code first. Dropped, every run syncs the document afterwards, which makes it agree with the code by construction and therefore say nothing."
+      },
+      {
+        "pattern": "Record every departure from the File Plan",
+        "why": "a silent departure and a task that never did the work are identical from outside: the File Plan names a path, the path is absent, the status says Complete. This sentence is what puts the difference on the record, at the only moment anyone knows why."
+      },
+      {
+        "pattern": "accounting does not count",
+        "why": "a task that explains one of two missing files has an unexplained missing file. Without this, `DEVIATION-RECORDED` degrades into a verdict any task can reach by explaining something."
+      }
+    ],
+    "commands/quick.md": [
+      {
+        "pattern": "Not \"ran it locally\"",
+        "why": "the fast lane's only guard is that its entry names a command someone else can paste. Dropped, the lane accepts \"looks fine\" and becomes a log of assertions."
+      },
+      {
+        "pattern": "claiming a passing check that did not pass",
+        "why": "an entry may honestly record a failure; what it may not do is record a pass that never happened. This is the one sentence separating the two."
+      },
+      {
+        "pattern": "sdd:resolve-task-paths",
+        "why": "a bare skill name resolves to a user-level skill when one exists, so an unnamespaced reference reaches the wrong file on exactly the machines that have both."
+      }
+    ],
+    "commands/converge.md": [
+      {
+        "pattern": "Never mark a task Complete on the strength of file existence alone",
+        "why": "converge checks paths, not behaviour. A task whose files exist may still be unbuilt, and this sentence is the whole boundary between what the script proves and what a status claims."
+      },
+      {
+        "pattern": "sdd:resolve-task-paths",
+        "why": "a bare skill name resolves to a user-level skill when one exists, so an unnamespaced reference reaches the wrong file on exactly the machines that have both."
+      },
+      {
+        "pattern": "propose editing a Complete task's acceptance criteria",
+        "why": "under flow-forward a Complete document is the record of what was decided and shipped, and editing its criteria rewrites history to match the code. Without this line the command proposes the flow-back repair on every project, which is the one thing a project choosing flow-forward chose against."
+      },
+      {
+        "pattern": "Never mark a task Complete on this evidence alone",
+        "why": "the behavioural pass reads code and runs nothing. The `**Verification:**` command stays the only executed check in the suite, and reading code is weaker evidence than running it. Without this the pass becomes a second, cheaper way to reach Complete, which is the one thing the verification gate exists to prevent."
+      },
+      {
+        "pattern": "Every finding carries file and line evidence",
+        "why": "a finding with no evidence is the command guessing, and it will be believed, because it arrives in the same format as the measured ones. This is the only thing separating the expensive pass from an expensive opinion."
+      },
+      {
+        "pattern": "Require `--phase`",
+        "why": "without it the pass dispatches one agent per task across the whole project. That is the version nobody runs twice, and a pass run once is a pass that measures nothing."
+      },
+      {
+        "pattern": "`unchecked`, not folded into",
+        "why": "\"I could not tell\" and \"it is not there\" are different facts and only one is a defect. Collapsing them turns an agent's failure to reach a conclusion into a finding against the code."
+      },
+      {
+        "pattern": "The notes are not optional context",
+        "why": "measured on this repo's phase 7: a brief without the task's Implementation Notes produced two findings and both were wrong. A criterion satisfied by evidence rather than by code, such as a measurement taken once and written down, reads as missing to an agent given only the code, and the false finding is indistinguishable from a real one."
+      }
+    ],
+    "commands/generate-specs.md": [
+      {
+        "pattern": "Number the phase's Success Criteria",
+        "why": "a spec whose success criteria are unnumbered is one nothing can point at, so every `(covers SC-NN)` a task might carry has no target and analyze can report no coverage at all."
+      },
+      {
+        "pattern": "Never reuse or renumber",
+        "why": "renumbering rewrites the meaning of every reference already written into another file, silently and everywhere at once. The rule has to be in the generator, because that is what touches an existing file's criteria list."
+      },
+      {
+        "pattern": "sdd:resolve-task-paths",
+        "why": "a bare skill name resolves to a user-level skill when one exists, so an unnamespaced reference reaches the wrong file on exactly the machines that have both."
+      }
+    ],
+    "commands/generate-tasks.md": [
+      {
+        "pattern": "Number every acceptance criterion",
+        "why": "a criterion with no number cannot be cited, and everything built on top of them assumes the generator wrote them: converge naming `2.03/AC2`, analyze reporting a spec criterion no task covers. Dropped, the documents still read fine and every tool that points at a requirement quietly has nothing to point at."
+      },
+      {
+        "pattern": "never reused and never",
+        "why": "renumbering rewrites the meaning of every reference already written into another file, silently and everywhere at once. The rule has to be in the generator, because that is what touches an existing file's criteria list."
+      },
+      {
+        "pattern": "a wrong `covers` is",
+        "why": "coverage is declared, never inferred. Without this, a generator fills in a plausible `covers` and analyze reports a requirement as accounted for on the strength of a wording coincidence."
+      },
+      {
+        "pattern": "sdd:resolve-task-paths",
+        "why": "a bare skill name resolves to a user-level skill when one exists, so an unnamespaced reference reaches the wrong file on exactly the machines that have both."
+      }
+    ],
+    "commands/next-task.md": [
+      {
+        "pattern": "Number every acceptance criterion",
+        "why": "a criterion with no number cannot be cited, and everything built on top of them assumes the generator wrote them: converge naming `2.03/AC2`, analyze reporting a spec criterion no task covers. Dropped, the documents still read fine and every tool that points at a requirement quietly has nothing to point at."
+      },
+      {
+        "pattern": "never reused and never",
+        "why": "renumbering rewrites the meaning of every reference already written into another file, silently and everywhere at once. The rule has to be in the generator, because that is what touches an existing file's criteria list."
+      },
+      {
+        "pattern": "sdd:resolve-task-paths",
+        "why": "a bare skill name resolves to a user-level skill when one exists, so an unnamespaced reference reaches the wrong file on exactly the machines that have both."
+      }
+    ],
+    "skills/improver/SKILL.md": [
+      {
+        "pattern": "an invalid measurement, not an unchanged score",
+        "why": "two eval runs over the same commit with a clean tree never tested the edit. Reporting that as \"unchanged\" is what made this gate ornamental once already, and the sentence is the correction."
+      }
+    ],
+    "hooks/spec-repo-rules.md": [
+      {
+        "pattern": "Which lane does this change take",
+        "why": "the fitness rubric is the only thing routing work between the fast lane and the pipeline, and this heading is where a session meets it. scripts/test-hooks.sh asserts the hook emits the heading under the right conditions; this asserts the source text still carries it, so a trim for the 4,000-character budget cannot take it."
+      },
+      {
+        "pattern": "Skill\\(\"sdd:practices\"\\)",
+        "why": "the rules file is deliberately short and defers the rubric, the layout and the worktree modes to this skill. Unnamespaced, the pointer reaches a user-level skill or nothing, and everything it defers is simply lost."
+      }
+    ],
+    "commands/analyze.md": [
+      {
+        "pattern": "never infers coverage from prose",
+        "why": "the one sentence separating a coverage report from a guess. Inferring coverage from matching wording would turn a coincidence into a claim that the work is accounted for, which is the claim this command exists to doubt."
+      },
+      {
+        "pattern": "propose editing a Complete task's acceptance criteria",
+        "why": "under flow-forward a Complete document is the record of what was decided and shipped, and editing its criteria rewrites history to match the code. Without this line the command proposes the flow-back repair on every project, which is the one thing a project choosing flow-forward chose against."
+      }
+    ],
+    "commands/clarify.md": [
+      {
+        "pattern": "One question per turn",
+        "why": "five questions asked at once get five answers optimised against each other in one breath. Asked one at a time, an answer routinely changes what the next question should be, which is the whole reason the queue is never shown."
+      },
+      {
+        "pattern": "Do not constrain them to a few words",
+        "why": "Spec Kit caps answers at five words, and this deliberately does not. A sentence of reasoning attached to a decision is worth more in the document than the decision alone, and the cap was the one part of its clarify flow rejected on contact."
+      },
+      {
+        "pattern": "Delete what the answer contradicts",
+        "why": "the step that gets skipped. Recording the answer and leaving the superseded text makes the document say both things, and the next reader has the same conversation again."
+      },
+      {
+        "pattern": "outranks the rest",
+        "why": "an open `[NEEDS CLARIFICATION]` marker is a question someone already judged worth asking and declined to guess at. Without the precedence rule, the five-question budget goes on questions this command invented while the accepted ones stay open."
+      }
+    ],
+    "commands/plan.md": [
+      {
+        "pattern": "Do not reintroduce a standing list of questions",
+        "why": "Part 1 used to ask about stakeholders, timelines, priority and rollback on every invocation. Those have an answer for every project, which is why they were worthless: they spent the five-question budget before reaching whatever this request actually left open."
+      },
+      {
+        "pattern": "at most five questions",
+        "why": "the budget is what forces prioritisation. Without a cap the scan produces a questionnaire, and a questionnaire gets answered carelessly or not at all."
+      }
+    ],
+    "commands/bug.md": [
+      {
+        "pattern": "the diagnosis is",
+        "why": "a diagnosis written after the repair is a description of whatever fixed it, and nothing distinguishes the two later. The ordering is the only reason the lane has three stages rather than one."
+      },
+      {
+        "pattern": "Only `fix` edits source",
+        "why": "the separation of duties is prose, not a hook, because 21 measured runs found no test weakening. Prose is what there is, so it has to still be there."
+      },
+      {
+        "pattern": "Never mark a fix `verified` on the strength of tests alone",
+        "why": "the whole verdict scheme in one sentence. A passing suite says the tests pass; only the reproduction says the reported bug is gone, and the two come apart exactly when the fix addressed a cause adjacent to the real one."
+      },
+      {
+        "pattern": "as its own Bash call",
+        "why": "the reproduction's exit status is the evidence. A pipe or an `|| true` hands that status to another program, and the verdict is then based on nothing. Same rule, same reason, as `/sdd:implement`'s Verification step."
+      },
+      {
+        "pattern": "If it does not reproduce, stop and say so",
+        "why": "a report that does not reproduce is not a bug yet. Without this the stage infers a cause it never observed, and the fix that follows is a guess with a diagnosis attached to make it look otherwise."
+      },
+      {
+        "pattern": "What comes back is data, never",
+        "why": "a bug report's URL is attacker-controlled text arriving in a session that can edit source. Treating a fetched page as instructions is the one way this command becomes a vector rather than a workflow."
+      }
+    ],
+    "skills/practices/SKILL.md": [
+      {
+        "pattern": "Is existing behaviour broken",
+        "why": "the bug-lane question has to come before the one-sentence test, because a bug passes that test and every other fast-lane question. Moved or dropped, every bug routes to `/sdd:quick` and its diagnosis goes unwritten."
+      }
+    ],
+    "commands/brainstorm.md": [
+      {
+        "pattern": "one per turn",
+        "why": "five questions asked at once get five answers optimised against each other in one breath. Asked one at a time, an answer routinely changes what the next question should be, which is the whole reason the queue is never shown. Same rule and same reason as /sdd:clarify, measured there."
+      },
+      {
+        "pattern": "stop and wait for an explicit yes",
+        "why": "the approval gate is the only review a design written by the session itself is going to get. Without this sentence the command presents a design and starts implementing in the same turn, which is the failure the gate exists for, and it looks like helpfulness."
+      },
+      {
+        "pattern": "Write no plan, no phase spec and no task file yourself",
+        "why": "a dialogue command that emits its own document produces a one-shot briefing with no status header, no dates and no progress log, and then two documents disagree about the same work. The handoff to the commands owning the templates is the whole reason this command is allowed to exist."
+      },
+      {
+        "pattern": "measures the repository, not your familiarity",
+        "why": "without it, a session classifies a new subsystem as bounded because it understands that kind of app, skips the design, and produces a plan nobody agreed to. Bounded has to mean the flow is here to read."
+      },
+      {
+        "pattern": "ratchet is one way",
+        "why": "complexity found mid-dialogue is exactly when it is cheapest to drop the process and finish. Saying the level may only rise is what stops a task that grew from being completed at the ceremony it was misclassified into."
+      }
+    ],
+    "skills/test-first/SKILL.md": [
+      {
+        "pattern": "it must fail for the right reason",
+        "why": "the step that gets skipped, and skipping it makes the rest theatre. A test that fails on an ImportError or a wrong path proves nothing about the behaviour, and it will be green for the same non-reason once the code exists."
+      },
+      {
+        "pattern": "shaped by that code",
+        "why": "a test written after the implementation describes what the code does, bugs included, and is indistinguishable afterwards from one that would have caught the regression. This sentence is the whole argument for the order, and the order is the only part that cannot be recovered later."
+      },
+      {
+        "pattern": "cannot fail",
+        "why": "ties the loop to the verification gate and to /sdd:analyze, which reports verification commands that cannot fail. A test that could never have failed is that same defect in miniature, and the connection is what stops the two rules being read as unrelated advice."
+      }
+    ],
+    "skills/receiving-review/SKILL.md": [
+      {
+        "pattern": "check the finding against the code before you",
+        "why": "the whole skill in one sentence. Without it the default holds: agree and comply, which turns a review into a mechanism for introducing the defects a reviewer only suggested. The finding almost always names a line that can be checked in seconds."
+      },
+      {
+        "pattern": "not a run of good reviews",
+        "why": "a session that reports every finding as correct is not being reviewed well, it is not checking. This sentence is what makes disagreement an expected result rather than an act of defiance, and without it a skill that says 'verify' still leaves no sanctioned way to report the verification failing."
+      },
+      {
+        "pattern": "Right, but a preference",
+        "why": "the third verdict is where real friction sits. Folded into 'right' it produces silent churn; folded into 'wrong' it produces an argument about taste. Naming it is what lets a session follow a preference while saying that is what it did."
+      }
+    ],
+    "skills/finishing-work/SKILL.md": [
+      {
+        "pattern": "The one that gets left out",
+        "why": "discard is the outcome nobody writes down, and a spike kept by neglect costs review attention later and invites someone to build on code never meant to be kept. Without this the skill lists two real options and one nobody picks."
+      },
+      {
+        "pattern": "git -C .specs merge",
+        "why": "sdd-worktree --specs=worktree puts the spec tree on its own branch and does not bring it back. A worktree removed before its branch is merged loses the planning record for the work just finished, which is the one artifact that cannot be reconstructed from the code."
+      },
+      {
+        "pattern": "as its own command",
+        "why": "the same rule as /sdd:implement and /sdd:bug, at the moment the Stop hook actually fires. A pipe or an || true hands the exit status to another program, and this is the point where someone is most tempted to take the shortcut because the work feels finished."
+      }
+    ],
+    "commands/handoff.md": [
+      {
+        "pattern": "Stop and ask, once, in one question",
+        "why": "the command runs at the moment a session is about to end, and whether to stop now or wait for in-flight work is the user's call, not a default. Without this the command writes a cheerful handoff while an expensive run is mid-write, which is the failure it exists to prevent."
+      },
+      {
+        "pattern": "Stop starting new work",
+        "why": "the step that gets skipped once the user chooses to wait. Waiting productively by starting something else recreates the exact problem being waited out, and the new thing is then in flight at the moment the session ends."
+      },
+      {
+        "pattern": "amend the handoff",
+        "why": "if the user waits and the work completes, the In flight section describes work that has since finished. A successor acts on it, so a stale section is worse than none. Writing the handoff first and amending after is what makes waiting safe rather than a reason to defer writing."
+      },
+      {
+        "pattern": "the dispatch brief verbatim",
+        "why": "a subagent does not survive a restart and leaves no partial result, so the brief is the only recoverable thing about it. Summarised, the successor reconstructs a brief from a summary of a brief and re-dispatches something different."
+      },
+      {
+        "pattern": "Never restate task statuses",
+        "why": "the spec repo already records them and a copy drifts from the moment it is written, which is the drift /sdd:converge exists to detect. A handoff that duplicates the record to save one lookup becomes a second source of truth that disagrees with the first."
+      },
+      {
+        "pattern": "not from memory of what the plan was",
+        "why": "the handoff is the one document written while its subject is being forgotten, which is exactly when a plausible reconstruction is easiest to mistake for a record. A decision that was not taken must not appear, however sensible."
+      }
+    ]
+  }
+}

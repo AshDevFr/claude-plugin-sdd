@@ -1,0 +1,16 @@
+{
+  "name": "sdd",
+  "owner": {
+    "name": "Sylvain Cau"
+  },
+  "metadata": {
+    "description": "The sdd spec-driven development workflow for Claude Code, as a one-plugin marketplace.",
+    "version": "0.41.0"
+  },
+  "plugins": [
+    {
+      "name": "sdd",
+      "source": "./"
+    }
+  ]
+}

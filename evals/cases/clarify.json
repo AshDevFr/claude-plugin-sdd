@@ -1,0 +1,48 @@
+{
+  "name": "/sdd:clarify: records the answer, edits the section, and removes the marker it resolved",
+  "fixture": "specrepo-ambiguous-spec.sh",
+  "prompt": "/sdd:clarify .specs/docs/specs/phase-1_audit-log.md\n\nAnswering your questions up front so you do not need to stop and ask: audit records are retained for 400 days, because the compliance window is one year and we want a margin. I do not know the answer on read authorisation yet, so leave that one open. Do not ask me anything; use these answers, write them into the document, and report.",
+  "artefact": ".specs/docs/specs/phase-1_audit-log.md",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)"
+  ],
+  "graders": [
+    {
+      "id": "logs-the-decision",
+      "must_match": "(?is)##\\s*Clarifications.{0,400}###\\s*Session\\s*\\d{4}-\\d{2}-\\d{2}.{0,600}400",
+      "why": "Step 4 requires a Clarifications section with a dated session subheading and one line per answer. The log is where the next reader meets the decision, and a run that only edits the body leaves nothing saying a question was ever asked"
+    },
+    {
+      "id": "removed-the-marker-it-answered",
+      "must_not_match": "(?i)NEEDS CLARIFICATION:[^\\]]*retain",
+      "why": "the retention marker was answered, so it must be replaced in place. Leaving it beside the answer is the failure this step exists to prevent: the document then carries both the question and its answer, and /sdd:implement still refuses to start",
+      "violating_example": "Records are kept for [NEEDS CLARIFICATION: how long are audit records retained before deletion?] 400 days",
+      "lint_ignore": "the marker is present before the run by construction: the fixture puts it there and the whole assertion is that it is gone afterwards. A must_not_match that did not match beforehand would be testing nothing."
+    },
+    {
+      "id": "kept-the-marker-it-could-not-answer",
+      "must_match": "(?i)NEEDS CLARIFICATION:[^\\]]*(role|read)",
+      "why": "the owner explicitly declined to decide read authorisation. Resolving it anyway would be the exact behaviour markers exist to prevent, and a run that clears every marker looks successful while having guessed",
+      "lint_ignore": "this checks a marker *survives*, so it must be present beforehand. It would pass against a run that did nothing at all, which is why it is read alongside the graders above: those fail unless the document changed. Alone it would be vacuous; together they pin 'changed the one it could answer and only that one'."
+    },
+    {
+      "id": "put-the-answer-in-the-body",
+      "must_match": "(?is)##\\s*Technical Approach.{0,800}400",
+      "why": "the log is the record, not the specification. The answer has to reach the section the marker was in, or the document still does not say how long records are kept. Anchored on the heading rather than on the number alone, because the number appears in the case prompt and a bare value match would pass on an echo"
+    },
+    {
+      "id": "says-what-is-still-open",
+      "source": "reply",
+      "must_match": "(?i)(still open|remains open|outstanding|unresolved|left open|did not (answer|resolve)|deferred)",
+      "why": "Step 6 requires naming what was not resolved. A report of only what was fixed reads as 'this document is now clear', which is a stronger claim than one answered question supports"
+    }
+  ]
+}

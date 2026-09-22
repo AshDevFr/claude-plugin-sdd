@@ -1,0 +1,47 @@
+{
+  "name": "/sdd:bug test: a passing suite with an unexercised reproduction is partial, not verified",
+  "fixture": "bug-fixed-unreproducible.sh",
+  "prompt": "/sdd:bug test checkout-500",
+  "artefact": ".specs/docs/bugs/2026-09-15-checkout-500/test.md",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)",
+    "Bash(python3:*)"
+  ],
+  "graders": [
+    {
+      "id": "verdict-is-partial",
+      "must_match": "(?im)^\\*\\*Verdict:\\*\\*\\s*partial\\b",
+      "why": "the local suite passes and the fix is right, so every signal except one says verified. The one that does not is the reproduction, which the assessment records as unrunnable here. Downgrading on that alone is the entire behaviour under test"
+    },
+    {
+      "id": "not-verified",
+      "must_not_match": "(?im)^\\*\\*Verdict:\\*\\*\\s*verified\\b",
+      "why": "a passing suite says the tests pass; only the reproduction says the reported bug is gone. Claiming verified here asserts something no command in the run actually showed",
+      "violating_example": "**Verdict:** verified"
+    },
+    {
+      "id": "says-which-command-was-not-run",
+      "must_match": "(?is)(reproduc)[^\\n]{0,200}(not|never|could not|cannot|unable|unavailable|staging|production)|(not|never|could not|cannot|unable)[^\\n]{0,120}reproduc",
+      "why": "a downgrade with no reason reads as hedging. The report has to name the reproduction as the thing that was not exercised, so a reader knows what would turn this into verified"
+    },
+    {
+      "id": "ran-the-verification",
+      "must_match": "(?is)unittest|discover -s tests",
+      "why": "the verification command from the assessment has to have actually run, or partial would be standing in for 'checked nothing at all'"
+    },
+    {
+      "id": "did-not-edit-source",
+      "must_not_match": "(?is)##\\s*What changed|(edited|modified|changed)\\s+`?app/pricing\\.py",
+      "why": "the test stage runs things and writes one file. Editing source to make a check pass is the failure the separation of duties exists to prevent, and the tree fingerprint at both ends is what makes it visible",
+      "violating_example": "## What changed\n- `app/pricing.py` - adjusted so the check passes"
+    }
+  ]
+}

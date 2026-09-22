@@ -1,0 +1,38 @@
+{
+  "name": "/sdd:implement: with two arguments, works on the document named first",
+  "fixture": "specrepo-implementable.sh",
+  "prompt": "/sdd:implement .specs/docs/tasks/phase-1/1.02-list-widgets.md Task 1.02: list_widgets()\n\nStop after marking it active. Do not write any source code.",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(grep:*)"
+  ],
+  "artefact": ".specs/docs/tasks/phase-1/1.02-list-widgets.md",
+  "graders": [
+    {
+      "id": "marked-the-named-document-active",
+      "must_match": "(?im)^\\*\\*Status:\\*\\*.*In Progress",
+      "why": "the first argument is the document. Measured 2026-09-16: through the Skill tool $1 binds to the second token and a typed slash command leaves it literal, so a command trusting $1 would go looking for a file named after the task title"
+    },
+    {
+      "id": "did-not-treat-the-title-as-a-path",
+      "source": "reply",
+      "must_not_match": "(?i)(no such file|cannot find|does not exist|could not (find|read|open))[^.\\n]{0,60}(Task 1\\.02|list_widgets\\(\\))",
+      "why": "the failure this case exists for: taking the section as the path and reporting the title as a missing file",
+      "violating_example": "I could not find Task 1.02: list_widgets() in the repository."
+    },
+    {
+      "id": "did-not-write-code",
+      "source": "reply",
+      "must_not_match": "(?i)(I (have )?(created|wrote|added) `?src/widgets\\.py|def list_widgets)",
+      "why": "it was told to stop after marking active; writing the module means it ignored the section boundary",
+      "violating_example": "I created src/widgets.py with def list_widgets()."
+    }
+  ]
+}

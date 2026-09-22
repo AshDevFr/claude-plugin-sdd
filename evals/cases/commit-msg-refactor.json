@@ -1,0 +1,28 @@
+{
+  "name": "commit-msg: refactor with a planning-document motivation",
+  "fixture": "refactor.sh",
+  "prompt": "/sdd:commit-msg",
+  "allowed_tools": [
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git status:*)"
+  ],
+  "graders": [
+    {
+      "id": "conventional-subject",
+      "must_match": "(feat|fix|docs|refactor|test|chore|perf|style|build|ci)(\\([^)]+\\))?!?: .+",
+      "why": "its rules require a conventional-commit subject"
+    },
+    {
+      "id": "no-plan-identifiers",
+      "must_not_match": "(?i)(phase[- ]?[0-9]|task [0-9]+\\.[0-9]|see the .*spec|\\.specs/)",
+      "why": "this is the diff shape where a phase number leaks in"
+    },
+    {
+      "id": "no-attribution",
+      "must_not_match": "(?im)^\\s*(co-authored-by|generated with|\ud83e\udd16)",
+      "why": "its rules forbid an attribution trailer; anchored to a line start so a prose mention of the rule is not a violation"
+    }
+  ],
+  "extract": "fenced"
+}

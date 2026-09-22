@@ -1,0 +1,44 @@
+{
+  "name": "/sdd:implement: reads the task and marks it active before working",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "/sdd:implement .specs/docs/tasks/phase-1/1.02-list-widgets.md\n\nStop after reviewing the task and marking it active. Report the objective and the acceptance criteria you found, and do not write any source code yet.",
+  "allowed_tools": [
+    "Read",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "read-the-right-task",
+      "must_match": "(?i)(list widgets|/widgets)",
+      "why": "it must act on the task it was given, not another",
+      "source": "reply"
+    },
+    {
+      "id": "reports-acceptance-criteria",
+      "must_match": "(?i)(200|JSON array)",
+      "why": "the criteria come from the task file; the word acceptance comes from the prompt",
+      "source": "reply"
+    },
+    {
+      "id": "marks-it-active",
+      "must_match": "(?im)^\\*\\*Status:\\*\\*.*In Progress",
+      "why": "Step 4 marks the task active; the task file is where that is either true or not",
+      "source": "artefact"
+    },
+    {
+      "id": "did-not-claim-complete",
+      "must_not_match": "(?i)(?<![Ii]f )\\bI (have |'ve )?(marked|set|flipped)\\b[^.]{0,40}\\bcomplete",
+      "why": "nothing was implemented, so claiming Complete is the failure the gate exists for. Anchored to the first person so a run may observe that another task is already Complete, and excluding a leading 'if' because a run reasoning about what would be false if it marked the task Complete is refusing to, not confessing",
+      "source": "reply",
+      "violating_example": "I marked the task Complete and committed the change."
+    }
+  ],
+  "artefact": ".specs/docs/tasks/phase-1/1.02-list-widgets.md"
+}

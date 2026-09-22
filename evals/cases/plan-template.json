@@ -1,0 +1,17 @@
+{
+  "name": "sdd:plan-template: the generated plan keeps its structure",
+  "fixture": "specrepo.sh",
+  "prompt": "Invoke the sdd:plan-template skill, then write an implementation plan for adding an audit trail to this service at .specs/docs/plans/2026-09-10-audit-trail.md. Follow the template. Write the file and stop; you do not need to print it.",
+  "allowed_tools": ["Read", "Write", "Glob", "Grep", "Bash(git:*)", "Bash(cat:*)", "Bash(ls:*)", "Bash(mkdir:*)"],
+  "artefact": ".specs/docs/plans/2026-09-10-audit-trail.md",
+  "graders": [
+    { "id": "status-header", "must_match": "(?im)^\\*\\*Status:\\*\\*",
+      "why": "required structure" },
+    { "id": "phase-organisation", "must_match": "(?i)(## Phase|Phases? Summary|### Phase)",
+      "why": "a plan organises work into phases; that is what distinguishes it from a task" },
+    { "id": "progress-tracking", "must_match": "(?i)## Progress Tracking",
+      "why": "a dated log is what tells a human where the work stands later" },
+    { "id": "no-agent-instructions", "must_not_match": "(?i)(REQUIRED SUB-SKILL|you MUST invoke|dispatch the implementer)",
+      "why": "the rules forbid agent instructions inside planning documents" }
+  ]
+}

@@ -1,0 +1,6 @@
+# Used by the tests: severity is not one of the four levels.
+[[incident]]
+id = "bad"
+title = "Wrong severity"
+severity = "degraded"
+started = 2026-09-01T00:00:00Z

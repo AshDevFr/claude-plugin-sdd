@@ -1,0 +1,117 @@
+"""Render incidents to a single self-contained HTML file.
+
+Self-contained is the constraint everything else follows from: the page is served from object
+storage during an outage, when whatever would have served a stylesheet is often the thing that
+is down. So no external requests, and the CSS is inlined. See
+docs/designs/2026-09-08-static-vs-server.md in the spec repo.
+"""
+
+import datetime
+import html
+
+from .model import SEVERITIES
+
+LABEL = {
+    "operational": "All systems operational",
+    "resolved": "Resolved",
+    "monitoring": "Monitoring",
+    "partial": "Partial outage",
+    "major": "Major outage",
+}
+
+CSS = """
+:root{--bg:#fbfaf8;--card:#fff;--fg:#1f2022;--muted:#625e58;--line:#e2ded7;
+--ok:#2e7a33;--monitoring:#855f00;--partial:#b4630f;--major:#b1281f;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#141517;--card:#1e2023;--fg:#e9e6e1;--muted:#9d9892;
+--line:#33363b;--ok:#79c07c;--monitoring:#e2b54f;--partial:#f0913a;--major:#ef5f57;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:52rem;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+.overall{display:flex;align-items:center;gap:.75rem;font-size:1.5rem;font-weight:650;margin:0 0 .35rem}
+.dot{width:.8rem;height:.8rem;border-radius:50%;flex:none}
+.stamp{color:var(--muted);font-size:.9rem;margin:0 0 2.5rem}
+.incident{background:var(--card);border:1px solid var(--line);border-radius:10px;
+padding:1.1rem 1.25rem;margin:0 0 1rem}
+.incident h2{font-size:1.1rem;margin:0 0 .3rem}
+.meta{color:var(--muted);font-size:.87rem;margin:0 0 .9rem}
+.badge{display:inline-block;font-size:.78rem;font-weight:650;padding:.15em .7em;border-radius:999px;
+border:1px solid currentColor;margin-right:.5rem}
+.components{color:var(--muted);font-size:.87rem}
+.timeline{list-style:none;margin:.9rem 0 0;padding:0 0 0 1.1rem;border-left:2px solid var(--line)}
+.timeline li{margin:0 0 .85rem;position:relative}
+.timeline li:last-child{margin-bottom:0}
+.timeline li::before{content:"";position:absolute;left:-1.45rem;top:.55rem;width:.5rem;height:.5rem;
+border-radius:50%;background:var(--line)}
+.timeline time{display:block;color:var(--muted);font-size:.8rem}
+.empty{color:var(--muted)}
+footer{color:var(--muted);font-size:.82rem;margin-top:3rem;border-top:1px solid var(--line);padding-top:1rem}
+"""
+
+
+def colour(severity):
+    return {"resolved": "var(--ok)", "operational": "var(--ok)", "monitoring": "var(--monitoring)",
+            "partial": "var(--partial)", "major": "var(--major)"}[severity]
+
+
+def human_duration(delta):
+    minutes = int(delta.total_seconds() // 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours} h {minutes:02d} min" if minutes else f"{hours} h"
+    days, hours = divmod(hours, 24)
+    return f"{days} d {hours} h" if hours else f"{days} d"
+
+
+def stamp(dt):
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def render_incident(inc):
+    out = [f'<article class="incident" id="{html.escape(inc.id)}">']
+    out.append(f"<h2>{html.escape(inc.title)}</h2>")
+    badge = (f'<span class="badge" style="color:{colour(inc.severity)}">'
+             f"{html.escape(LABEL[inc.severity])}</span>")
+    when = stamp(inc.started)
+    if inc.duration is not None:
+        when += f" &middot; lasted {human_duration(inc.duration)}"
+    else:
+        when += " &middot; ongoing"
+    out.append(f'<p class="meta">{badge}{when}</p>')
+    if inc.components:
+        names = ", ".join(html.escape(c) for c in inc.components)
+        out.append(f'<p class="components">Affected: {names}</p>')
+    if inc.updates:
+        out.append('<ol class="timeline">')
+        # Newest first inside an incident: during an outage the last line is the one that matters.
+        for u in reversed(inc.updates):
+            out.append(f"<li><time>{stamp(u.at)}</time>{html.escape(u.body)}</li>")
+        out.append("</ol>")
+    out.append("</article>")
+    return "\n".join(out)
+
+
+def render(incidents, title="Status", now=None):
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    from .model import overall
+    state = overall(incidents)
+    parts = [
+        "<!DOCTYPE html>", '<html lang="en">', "<head>", '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>{html.escape(title)}</title>", f"<style>{CSS}</style>", "</head>", "<body>",
+        "<main>",
+        f'<h1 class="overall"><span class="dot" style="background:{colour(state)}"></span>'
+        f"{html.escape(LABEL[state])}</h1>",
+        f'<p class="stamp">Updated {stamp(now)}</p>',
+    ]
+    if incidents:
+        parts.extend(render_incident(i) for i in incidents)
+    else:
+        parts.append('<p class="empty">No incidents recorded.</p>')
+    parts.append(f'<footer>Generated by Beacon &middot; {len(incidents)} incident(s) on record</footer>')
+    parts.extend(["</main>", "</body>", "</html>", ""])
+    return "\n".join(parts)
+
+
+assert set(LABEL) == set(SEVERITIES) | {"operational"}, "every severity needs a label"

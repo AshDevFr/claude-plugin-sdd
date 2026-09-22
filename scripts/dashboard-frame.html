@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!-- TITLE --></title>
+<link rel="icon" href="data:,">
+<style>
+  /* Charcoal and ember, with blue steel as the secondary. The frame owns the palette and the
+     report's styles, so a report scaffolded before a design change picks the change up on its
+     next load. Report rules are scoped under .frame-content, which outranks the <style> block
+     older reports still carry inside their own markup. */
+  :root {
+    --bg: #141517;
+    --bar: #1b1c1f;
+    --surface: #1e2023;
+    --surface-2: #272a2e;
+    --border: #33363b;
+    --fg: #e9e6e1;
+    --muted: #9d9892;
+    --ember: #f07a3a;
+    --ember-hot: #ff9557;
+    --ember-bg: rgba(240, 122, 58, .12);
+    --steel: #8aa4bb;
+    --steel-bg: rgba(138, 164, 187, .12);
+    --ok: #79c07c;      --ok-bg: rgba(121, 192, 124, .14);
+    --run: #e2b54f;     --run-bg: rgba(226, 181, 79, .15);
+    --idle: #a19d97;    --idle-bg: rgba(161, 157, 151, .13);
+    --bad: #ef5f57;     --bad-bg: rgba(239, 95, 87, .15);
+    --bar-h: 48px;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f3f2ef;
+      --bar: #fbfaf8;
+      --surface: #ffffff;
+      --surface-2: #ebe9e5;
+      --border: #d7d3cc;
+      --fg: #1f2022;
+      --muted: #625e58;
+      --ember: #c0501a;
+      --ember-hot: #9e3f10;
+      --ember-bg: rgba(192, 80, 26, .10);
+      --steel: #3e5d78;
+      --steel-bg: rgba(62, 93, 120, .10);
+      --ok: #2e7a33;      --ok-bg: #e0f0de;
+      --run: #855f00;     --run-bg: #f7ecc9;
+      --idle: #5d5a55;    --idle-bg: #e9e7e3;
+      --bad: #b1281f;     --bad-bg: #f9e1de;
+      color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  button { font: inherit; color: inherit; }
+
+  /* ---- bar ---- */
+  .frame-bar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    height: var(--bar-h); padding: 0 16px;
+    background: var(--bar);
+    border-bottom: 1px solid var(--border);
+    box-shadow: inset 0 -2px 0 -1px var(--ember-bg);
+  }
+  .frame-title { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .frame-title a { color: inherit; text-decoration: none; }
+  .frame-title a::before {
+    content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px;
+    border-radius: 2px; background: var(--ember); vertical-align: 1px;
+    box-shadow: 0 0 8px var(--ember);
+  }
+  .frame-spacer { flex: 1; }
+
+  /* ---- pages menu ---- */
+  .frame-menu { position: relative; min-width: 0; }
+  .frame-menu > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px; max-width: 46vw;
+    padding: 5px 10px; border-radius: 8px; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface);
+  }
+  .frame-menu > summary::-webkit-details-marker { display: none; }
+  .frame-menu > summary:hover { border-color: var(--steel); }
+  .frame-menu[open] > summary { border-color: var(--ember); }
+  .frame-menu-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .frame-menu-count {
+    font-size: 11px; padding: 0 6px; border-radius: 999px;
+    color: var(--steel); background: var(--steel-bg);
+  }
+  .frame-menu > summary::after {
+    content: ""; width: 6px; height: 6px; margin-left: 2px; flex: none;
+    border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+    transform: translateY(-2px) rotate(45deg); transition: transform .15s;
+  }
+  .frame-menu[open] > summary::after { transform: translateY(1px) rotate(-135deg); }
+  .frame-menu-panel {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - var(--bar-h) - 24px); overflow-y: auto;
+    padding: 6px; border-radius: 10px;
+    background: var(--bar); border: 1px solid var(--border);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+  }
+  .frame-menu-panel a {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 6px 10px; border-radius: 6px; font-size: 13.5px;
+    color: var(--fg); text-decoration: none;
+    border-left: 2px solid transparent;
+  }
+  .frame-menu-panel a:hover { background: var(--surface-2); }
+  .frame-menu-panel a.current { border-left-color: var(--ember); background: var(--ember-bg); }
+  .frame-menu-panel time { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+  .frame-menu-group { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .frame-menu-group-name {
+    padding: 2px 10px 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--steel);
+  }
+  .frame-menu-group-name span { color: var(--muted); margin-left: 6px; letter-spacing: 0; text-transform: none; }
+  .frame-menu-group a { padding-left: 18px; }
+
+  /* ---- live pill ---- */
+  .frame-live {
+    font-size: 12px; color: var(--muted); white-space: nowrap;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .frame-live::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--run);
+  }
+  .frame-live[data-state="live"]::before { background: var(--ok); }
+  .frame-live[data-state="offline"]::before,
+  .frame-live[data-state="locked"]::before { background: var(--bad); }
+
+  /* ---- layout: content, and an "On this page" sidebar that turns into a dropdown ---- */
+  .frame-layout {
+    display: grid; gap: 16px 32px; align-items: start;
+    grid-template-columns: minmax(0, 1fr); grid-template-areas: "toc" "main";
+    max-width: 1440px; margin: 0 auto; padding: 16px;
+  }
+  .frame-content { grid-area: main; min-width: 0; }
+  .frame-toc {
+    grid-area: toc; min-width: 0; font-size: 13.5px;
+    position: sticky; top: var(--bar-h); z-index: 15; background: var(--bg);
+  }
+  .frame-toc-toggle {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    padding: 9px 12px; cursor: pointer; text-align: left;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .frame-toc-toggle::after {
+    content: ""; width: 7px; height: 7px;
+    border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+    transform: translateY(-2px) rotate(45deg); transition: transform .15s;
+  }
+  .frame-toc[data-open="true"] .frame-toc-toggle { border-radius: 8px 8px 0 0; border-bottom-color: var(--ember); }
+  .frame-toc[data-open="true"] .frame-toc-toggle::after { transform: translateY(2px) rotate(-135deg); }
+  .frame-toc-body {
+    display: none; padding: 8px 6px 10px;
+    position: absolute; left: 0; right: 0; max-height: calc(100vh - var(--bar-h) - 64px); overflow-y: auto;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+    background: var(--surface); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px;
+  }
+  .frame-toc[data-open="true"] .frame-toc-body { display: block; }
+  .frame-toc ul { list-style: none; margin: 0; padding: 0; }
+  .frame-toc a {
+    display: block; padding: 4px 10px; border-left: 2px solid transparent;
+    color: var(--muted); text-decoration: none;
+  }
+  .frame-toc a:hover { color: var(--ember-hot); }
+  .frame-toc a.active { color: var(--ember); border-left-color: var(--ember); }
+  .frame-toc a.sub { padding-left: 24px; font-size: 12.5px; }
+  .frame-toc a.folded { opacity: .6; }
+  .frame-toc-actions { display: flex; gap: 4px; padding: 0 4px 6px; }
+  .frame-toc-actions button {
+    border: 0; background: none; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+    font-size: 12px; color: var(--steel);
+  }
+  .frame-toc-actions button:hover { background: var(--steel-bg); }
+
+  @media (min-width: 1100px) {
+    .frame-layout.has-toc { grid-template-columns: minmax(0, 1fr) 230px; grid-template-areas: "main toc"; padding: 24px 32px; }
+    .frame-toc {
+      position: sticky; top: calc(var(--bar-h) + 24px);
+      max-height: calc(100vh - var(--bar-h) - 48px); overflow-y: auto;
+      border-left: 1px solid var(--border); padding-left: 4px;
+    }
+    .frame-toc-toggle {
+      pointer-events: none; background: none; border: 0; padding: 0 10px 8px;
+      font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--steel);
+    }
+    .frame-toc-toggle::after { display: none; }
+    .frame-toc .frame-toc-body, .frame-toc[data-open] .frame-toc-body {
+      display: block; position: static; max-height: none; overflow: visible;
+      background: none; border: 0; padding: 0; box-shadow: none;
+    }
+  }
+
+  .frame-empty { max-width: 640px; margin: 48px auto; }
+  .frame-empty code { color: var(--ember); }
+
+  @media (max-width: 560px) {
+    .frame-bar { gap: 8px; padding: 0 10px; }
+    .frame-title { min-width: 0; flex: 0 1 auto; }
+    .frame-menu { flex: none; }
+    .frame-menu-count { display: none; }
+    .frame-live { font-size: 0; gap: 0; }
+    .frame-toc { top: var(--bar-h); margin: -10px -10px 0; padding: 6px 10px; background: var(--bg); }
+    .frame-menu { position: static; }
+    .frame-menu > summary { max-width: 34vw; }
+    .frame-menu-panel { left: 8px; right: 8px; width: auto; top: calc(var(--bar-h) - 2px); }
+    .frame-layout { padding: 10px; }
+  }
+
+  /* ---- report ---- */
+  .frame-content .sdd-report {
+    --accent: var(--ember);
+    --todo: var(--steel);
+    color: var(--fg); background: none; border: 0; border-radius: 0;
+    padding: 0; max-width: 1180px; margin: 0 auto;
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .frame-content .sdd-report * { box-sizing: border-box; }
+  .frame-content .sdd-report a { color: var(--ember); text-underline-offset: 2px; }
+  .frame-content .sdd-report a:hover { color: var(--ember-hot); }
+  .frame-content .sdd-report code { font: .88em/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--fg); }
+  .frame-content .sdd-report h1 { font-size: 1.7rem; line-height: 1.2; margin: 0; letter-spacing: -.01em; }
+  .frame-content .sdd-report h2 {
+    font-size: 1.2rem; margin: 28px 0 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border); scroll-margin-top: calc(var(--bar-h) + 12px);
+  }
+  .frame-content .sdd-report h3 { font-size: 1rem; margin: 18px 0 8px; color: var(--fg); scroll-margin-top: calc(var(--bar-h) + 12px); }
+  .frame-content .sdd-report h4 {
+    font-size: .74rem; margin: 0 0 6px; color: var(--steel);
+    text-transform: uppercase; letter-spacing: .08em;
+  }
+  .frame-content .sdd-report p { margin: 6px 0; }
+  .frame-content .sdd-report .muted { color: var(--muted); }
+  .frame-content .sdd-report .small { font-size: .85rem; }
+  .frame-content .sdd-report .nowrap { white-space: nowrap; }
+  .frame-content .sdd-report .todo { color: var(--steel); font-style: italic; }
+
+  .frame-content .sdd-report .head {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;
+  }
+  .frame-content .sdd-report .generated { color: var(--muted); font-size: .85rem; }
+
+  .frame-content .sdd-report .cards {
+    display: grid; gap: 12px; margin-top: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+  .frame-content .sdd-report .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; min-width: 0;
+  }
+  .frame-content .sdd-report .card .value { font-size: 1rem; font-weight: 550; overflow-wrap: anywhere; }
+
+  .frame-content .sdd-report .pill {
+    display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-size: .78rem; font-weight: 600; white-space: nowrap; vertical-align: middle;
+    color: var(--idle); background: var(--idle-bg);
+  }
+  .frame-content .sdd-report .pill.done, .frame-content .sdd-report .pill.accepted { color: var(--ok); background: var(--ok-bg); }
+  .frame-content .sdd-report .pill.running, .frame-content .sdd-report .pill.partly { color: var(--run); background: var(--run-bg); }
+  .frame-content .sdd-report .pill.blocked { color: var(--bad); background: var(--bad-bg); }
+  .frame-content .sdd-report .pill.queued, .frame-content .sdd-report .pill.paused,
+  .frame-content .sdd-report .pill.retired, .frame-content .sdd-report .pill.unknown { color: var(--idle); background: var(--idle-bg); }
+
+  .frame-content .sdd-report .table-wrap {
+    overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 8px 0 12px;
+  }
+  .frame-content .sdd-report table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  .frame-content .sdd-report th, .frame-content .sdd-report td {
+    text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--border);
+  }
+  .frame-content .sdd-report th { background: var(--surface-2); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .frame-content .sdd-report tr:last-child td { border-bottom: 0; }
+  .frame-content .sdd-report td { color: var(--fg); background: var(--surface); }
+
+  .frame-content .sdd-report .progress { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .frame-content .sdd-report .progress-track {
+    flex: 1; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .frame-content .sdd-report .progress-fill { height: 100%; background: linear-gradient(90deg, #b8401a, var(--ember) 70%, var(--ember-hot)); }
+  .frame-content .sdd-report .progress-label { font-size: .85rem; color: var(--muted); white-space: nowrap; }
+  .frame-content .sdd-report .doclist { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .frame-content .sdd-report .doclist li {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  }
+  .frame-content .sdd-report .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .frame-content .sdd-report .name { font-weight: 600; }
+  .frame-content .sdd-report details {
+    border: 1px solid var(--border); border-radius: 10px; margin: 8px 0; padding: 6px 12px;
+    background: var(--surface);
+  }
+  .frame-content .sdd-report summary { cursor: pointer; padding: 4px 0; }
+  .frame-content .sdd-report summary::marker { color: var(--ember); }
+  .frame-content .sdd-report .head-line { overflow-wrap: anywhere; }
+
+  .frame-content .sdd-report .shots {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  }
+  .frame-content .sdd-report .shots.phone { grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); }
+  .frame-content .sdd-report figure {
+    margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  }
+  .frame-content .sdd-report figure img { display: block; width: 100%; height: auto; background: var(--surface-2); }
+  .frame-content .sdd-report figcaption { padding: 8px 10px; font-size: .85rem; color: var(--muted); }
+  .frame-content .sdd-report ul.links { padding-left: 18px; }
+
+  /* Foldable sections: the script wraps each h2 and what follows it up to the next h2. */
+  .frame-content .sdd-report .fold > h2 { padding: 0; }
+  .frame-content .sdd-report .fold-toggle {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 0 0 6px; border: 0; background: none; cursor: pointer; text-align: left;
+    font: inherit; color: inherit;
+  }
+  .frame-content .sdd-report .fold-toggle::before {
+    content: ""; flex: none; width: 7px; height: 7px;
+    border-right: 2px solid var(--ember); border-bottom: 2px solid var(--ember);
+    transform: rotate(45deg); transition: transform .15s; margin: 0 2px 3px;
+  }
+  .frame-content .sdd-report .fold.folded .fold-toggle::before { transform: rotate(-45deg); margin-bottom: 0; }
+  .frame-content .sdd-report .fold-toggle:hover { color: var(--ember-hot); }
+
+  /* What the owner must act on leads the page, full width, before any other status. */
+  .frame-content .sdd-report .card.attention {
+    margin-top: 16px; scroll-margin-top: calc(var(--bar-h) + 12px);
+    border: 1px solid var(--ember); border-left: 4px solid var(--ember);
+    background: linear-gradient(90deg, var(--ember-bg), transparent 70%), var(--surface);
+    box-shadow: 0 0 0 1px var(--ember-bg), 0 0 24px -8px var(--ember);
+  }
+  .frame-content .sdd-report .card.attention h4 { color: var(--ember); }
+  .frame-content .sdd-report .card.attention .value { font-size: 1.05rem; }
+  .frame-content .sdd-report .card.attention.clear {
+    border: 1px solid var(--border); border-left: 4px solid var(--ok); background: var(--surface); box-shadow: none;
+  }
+  .frame-content .sdd-report .card.attention.clear h4 { color: var(--ok); }
+  .frame-content .sdd-report .card.attention.clear .value { font-size: .95rem; font-weight: 500; color: var(--muted); }
+  .frame-needs {
+    display: none; align-items: center; gap: 6px; white-space: nowrap;
+    padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+    color: var(--bg); background: var(--ember); text-decoration: none;
+    box-shadow: 0 0 12px -2px var(--ember);
+  }
+  .frame-needs.on { display: inline-flex; }
+  .frame-needs:hover { background: var(--ember-hot); }
+
+  @media (max-width: 560px) {
+    .frame-content .sdd-report h1 { font-size: 1.35rem; }
+    .frame-content .sdd-report .cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .frame-content .sdd-report th, .frame-content .sdd-report td { padding: 6px 8px; }
+  }
+  @media (max-width: 380px) {
+    .frame-content .sdd-report .cards { grid-template-columns: 1fr; }
+  }
+  /* Below the sidebar breakpoint the index is sticky under the bar, so a jump clears both. */
+  @media (max-width: 1099px) {
+    .frame-content .sdd-report h2, .frame-content .sdd-report h3,
+    .frame-content .sdd-report .card.attention { scroll-margin-top: calc(var(--bar-h) + 60px); }
+  }
+
+  /* Captures open full size in a native <dialog>. The cursor is most of the feature: nobody
+     clicks an image that does not look clickable. */
+  .frame-content .sdd-report figure img,
+  .frame-content .sdd-report img[src^="/files/"] { cursor: zoom-in; }
+  .frame-content .sdd-report figure:hover { border-color: var(--steel); }
+
+  .frame-zoom {
+    border: none; padding: 0; background: transparent; max-width: 100vw; max-height: 100vh;
+    width: min(96vw, 1400px); color: var(--fg);
+  }
+  .frame-zoom::backdrop { background: rgba(0, 0, 0, .78); }
+  /* Image and caption are one card, the way the report's own figures are, so the caption never
+     ends up reading against whatever happens to be behind the dialog. */
+  .frame-zoom figure {
+    margin: 0 auto; width: fit-content; max-width: 100%;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden;
+  }
+  .frame-zoom img {
+    display: block; max-width: 100%; max-height: 78vh; width: auto; height: auto;
+    background: var(--surface-2); cursor: zoom-out;
+  }
+  /* A tall phone capture is the case that breaks a naive lightbox, so the card scrolls. */
+  .frame-zoom-body { max-height: 94vh; overflow: auto; padding: 3vh 0; }
+  .frame-zoom figcaption {
+    padding: 9px 12px; text-align: center; font-size: .88rem; color: var(--muted);
+    border-top: 1px solid var(--border);
+  }
+  .frame-zoom figcaption[hidden] { display: none; }
+  .frame-zoom-close {
+    position: fixed; top: 0; right: 0; margin: 12px; z-index: 1; cursor: pointer;
+    background: var(--bar); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 14px; font: inherit; font-size: .85rem;
+  }
+  .frame-zoom-close:hover { border-color: var(--ember); }
+  @media print { .frame-zoom { display: none; } }
+</style>
+</head>
+<body>
+<header class="frame-bar">
+  <span class="frame-title"><a href="/"><!-- TITLE --></a></span>
+  <details class="frame-menu">
+    <summary><span class="frame-menu-current"><!-- CURRENT --></span><span class="frame-menu-count"><!-- COUNT --></span></summary>
+    <nav class="frame-menu-panel"><!-- NAV --></nav>
+  </details>
+  <span class="frame-spacer"></span>
+  <a class="frame-needs" href="#waiting-on-you">Needs you</a>
+  <span class="frame-live" data-state="connecting">connecting</span>
+</header>
+<div class="frame-layout">
+<nav class="frame-toc" data-open="false" hidden>
+  <button type="button" class="frame-toc-toggle" aria-expanded="false">On this page</button>
+  <div class="frame-toc-body">
+    <div class="frame-toc-actions"><button type="button" data-fold="expand">Expand all</button><button type="button" data-fold="collapse">Collapse all</button></div>
+    <ul></ul>
+  </div>
+</nav>
+<main class="frame-content">
+<!-- CONTENT -->
+</main>
+</div>
+<script>
+(function () {
+  // Pages menu: close on a click elsewhere or on Escape.
+  var menu = document.querySelector('.frame-menu');
+  var tocBox = document.querySelector('.frame-toc');
+  function closeToc() {
+    tocBox.setAttribute('data-open', 'false');
+    tocBox.querySelector('.frame-toc-toggle').setAttribute('aria-expanded', 'false');
+  }
+  document.addEventListener('click', function (e) {
+    if (menu.open && !menu.contains(e.target)) menu.open = false;
+    if (!tocBox.contains(e.target)) closeToc();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { menu.open = false; closeToc(); } });
+
+  // Folding and the section index apply to the report only. A mockup's own headings are part of
+  // the design it shows, so they are left exactly as written.
+  var report = document.querySelector('.frame-content .sdd-report');
+  if (!report) return;
+
+  // "Waiting on you" leads the page and, while it holds anything, the bar carries a chip to it,
+  // so a pending approval is never below the fold. Reports scaffolded before this marked the
+  // card only by its heading, so the heading is enough to find it.
+  var wait = report.querySelector('.card.attention') || Array.prototype.find.call(
+    report.querySelectorAll('.card'), function (c) {
+      var h = c.querySelector('h4');
+      return h && /waiting on you/i.test(h.textContent);
+    });
+  if (wait) {
+    wait.classList.add('attention');
+    // Lifted out of the card grid, so the cards left behind still fill their row.
+    var grid = wait.closest('.cards');
+    if (grid) grid.parentNode.insertBefore(wait, grid);
+    wait.id = wait.id || 'waiting-on-you';
+    var value = wait.querySelector('.value') || wait;
+    var said = value.textContent.trim();
+    var clear = !said || value.classList.contains('todo') || /^(nothing|none|no\b)/i.test(said);
+    wait.classList.toggle('clear', clear);
+    if (!clear) {
+      var chip = document.querySelector('.frame-needs');
+      chip.href = '#' + wait.id;
+      chip.classList.add('on');
+      chip.addEventListener('click', function (e) {
+        e.preventDefault();
+        wait.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    }
+  }
+
+  var heads = Array.prototype.filter.call(report.querySelectorAll('h2'), function (h) {
+    return h.parentElement === report;
+  });
+  if (heads.length < 2) return;
+
+  // Folds survive the reload every commit triggers, so they are remembered per page.
+  var KEY = 'sdd-dashboard-folds:' + location.pathname;
+  var folded = {};
+  try { folded = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(folded)); } catch (e) {} }
+
+  var used = {};
+  function slug(text) {
+    var s = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section';
+    var id = s, n = 2;
+    while (used[id] || document.getElementById(id)) id = s + '-' + n++;
+    used[id] = true;
+    return id;
+  }
+
+  var toc = document.querySelector('.frame-toc'), list = toc.querySelector('ul');
+  var sections = [], links = [];
+
+  heads.forEach(function (h) {
+    var section = document.createElement('section');
+    section.className = 'fold';
+    var body = document.createElement('div');
+    body.className = 'fold-body';
+    h.parentNode.insertBefore(section, h);
+    var next = h.nextSibling;
+    while (next && !(next.nodeType === 1 && next.tagName === 'H2' && heads.indexOf(next) >= 0)) {
+      var move = next; next = next.nextSibling; body.appendChild(move);
+    }
+    var label = h.textContent.trim();
+    var id = h.id || slug(label);
+    h.id = id;
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'fold-toggle';
+    while (h.firstChild) btn.appendChild(h.firstChild);
+    h.appendChild(btn);
+    section.appendChild(h); section.appendChild(body);
+
+    var li = document.createElement('li'), a = document.createElement('a');
+    a.href = '#' + id; a.textContent = label; li.appendChild(a); list.appendChild(li);
+    var entry = { id: id, section: section, body: body, btn: btn, link: a, head: h };
+    sections.push(entry); links.push({ a: a, target: h, entry: entry });
+
+    Array.prototype.forEach.call(body.querySelectorAll('h3'), function (h3) {
+      var sub = document.createElement('a');
+      h3.id = h3.id || slug(id + ' ' + h3.textContent.trim());
+      sub.href = '#' + h3.id; sub.className = 'sub'; sub.textContent = h3.textContent.trim();
+      var sli = document.createElement('li'); sli.appendChild(sub); list.appendChild(sli);
+      links.push({ a: sub, target: h3, entry: entry });
+    });
+
+    btn.addEventListener('click', function () { setFold(entry, !section.classList.contains('folded')); save(); });
+    setFold(entry, !!folded[id]);
+  });
+
+  function setFold(entry, on) {
+    entry.section.classList.toggle('folded', on);
+    entry.body.hidden = on;
+    entry.btn.setAttribute('aria-expanded', String(!on));
+    entry.link.classList.toggle('folded', on);
+    if (on) folded[entry.id] = 1; else delete folded[entry.id];
+  }
+
+  toc.hidden = false;
+  document.querySelector('.frame-layout').classList.add('has-toc');
+  var toggle = toc.querySelector('.frame-toc-toggle');
+  var wide = window.matchMedia('(min-width: 1100px)');
+  toggle.addEventListener('click', function () {
+    var open = toc.getAttribute('data-open') !== 'true';
+    toc.setAttribute('data-open', String(open)); toggle.setAttribute('aria-expanded', String(open));
+  });
+
+  links.forEach(function (l) {
+    l.a.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (l.entry.section.classList.contains('folded')) { setFold(l.entry, false); save(); }
+      if (!wide.matches) { toc.setAttribute('data-open', 'false'); toggle.setAttribute('aria-expanded', 'false'); }
+      l.target.scrollIntoView({ block: 'start' });
+      history.replaceState(null, '', '#' + l.target.id);
+    });
+  });
+  toc.querySelector('.frame-toc-actions').addEventListener('click', function (e) {
+    var what = e.target.getAttribute && e.target.getAttribute('data-fold');
+    if (!what) return;
+    sections.forEach(function (s) { setFold(s, what === 'collapse'); });
+    save();
+  });
+
+  // A link to a section opens it, including one inside a folded section.
+  if (location.hash) {
+    var t = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    links.forEach(function (l) { if (l.target === t) setFold(l.entry, false); });
+  }
+
+  // Mark the section being read: the last heading scrolled past the bar.
+  var ticking = false;
+  function spy() {
+    ticking = false;
+    var edge = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar-h')) + 24;
+    var current = null;
+    links.forEach(function (l) {
+      if (l.target.offsetParent !== null && l.target.getBoundingClientRect().top <= edge) current = l;
+    });
+    links.forEach(function (l) { l.a.classList.toggle('active', l === current); });
+  }
+  window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
+  spy();
+})();
+</script>
+<dialog class="frame-zoom" aria-label="Full size capture">
+  <button class="frame-zoom-close" type="button" aria-label="Close">Close</button>
+  <div class="frame-zoom-body"><figure><img alt=""><figcaption></figcaption></figure></div>
+</dialog>
+<script>
+(function () {
+  var dlg = document.querySelector('.frame-zoom');
+  if (!dlg || !dlg.showModal) return;   // no native dialog: images stay as they are
+  var img = dlg.querySelector('img'), cap = dlg.querySelector('figcaption');
+  var content = document.querySelector('.frame-content');
+  if (!content) return;
+
+  // Delegated, so a capture added by a later regenerate is clickable without rebinding.
+  content.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG') return;
+    if (!t.closest('figure') && String(t.getAttribute('src') || '').indexOf('/files/') !== 0) return;
+    if (t.closest('a')) return;         // an image inside a link keeps the link
+    e.preventDefault();
+    img.src = t.currentSrc || t.src;
+    img.alt = t.alt || '';
+    var fc = t.closest('figure') && t.closest('figure').querySelector('figcaption');
+    cap.textContent = fc ? fc.textContent : (t.alt || '');
+    cap.hidden = !cap.textContent;
+    dlg.showModal();
+  });
+
+  // Esc and focus trapping come free with showModal. These are the other two ways out.
+  img.addEventListener('click', function () { dlg.close(); });
+  dlg.querySelector('.frame-zoom-close').addEventListener('click', function () { dlg.close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', function () { img.removeAttribute('src'); });
+})();
+</script>
+<!-- HELPER -->
+</body>
+</html>

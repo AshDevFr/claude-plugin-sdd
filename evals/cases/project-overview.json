@@ -1,0 +1,17 @@
+{
+  "name": "/sdd:project-overview: writes an overview with git provenance",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "/sdd:project-overview",
+  "allowed_tools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash(git:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(find:*)", "Bash(wc:*)", "Bash(mkdir:*)"],
+  "extract": "raw",
+  "graders": [
+    { "id": "records-provenance", "must_match": "(?i)(generator:|commit|branch|provenance|frontmatter)",
+      "why": "the skill's contract is that the doc records git provenance so later runs can diff against it" },
+    { "id": "describes-the-project", "must_match": "(?i)widget",
+      "why": "an overview that does not mention the subject is generic filler" },
+    { "id": "reads-the-prd", "must_match": "(?i)(phase 1|phase 2|audit|http)",
+      "why": "it is required to read the implementation docs, not only the code" },
+    { "id": "no-superpowers-path", "must_not_match": "(?i)(writing|wrote|created).{0,40}docs/superpowers",
+      "why": "planning artefacts must not be written there; anchored so merely checking for it is allowed" }
+  ]
+}

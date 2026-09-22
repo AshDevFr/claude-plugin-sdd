@@ -1,0 +1,35 @@
+{
+  "name": "sdd:tidying-spec-repos: reports drift without editing anything",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "Invoke the sdd:tidying-spec-repos skill and report what it finds about this spec repo's state. Report only; do not move, rename or edit any file.",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)",
+    "Bash(python3:*)",
+    "Bash(wc:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "used-its-scripts",
+      "must_match": "(?i)(spec-inventory|task-converge|build-index|backfill-dates|inventory script|ACTIVE|SHIPPED|NO-FILE-PLAN)",
+      "why": "the skill's value is its bundled scripts. Accepts either their names or their verdict vocabulary, since a run may refer to them by description while still having run them"
+    },
+    {
+      "id": "reports-on-this-repo",
+      "must_match": "(?i)(phase-1|1\\.0[12]|PRD)",
+      "why": "it must report on the actual tree, not describe itself"
+    },
+    {
+      "id": "did-not-edit",
+      "must_not_match": "(?i)(\\bI (moved|renamed|archived)\\b(?![^.\\n]{0,40}\\bnothing\\b)|I have updated the status)",
+      "why": "it was told to report only. The negative lookahead is there because a run that says 'I moved, renamed and edited nothing' is stating compliance, and an earlier baseline read exactly that as a violation",
+      "violating_example": "I moved the finished plan into shipped/ and updated INDEX.md."
+    }
+  ]
+}

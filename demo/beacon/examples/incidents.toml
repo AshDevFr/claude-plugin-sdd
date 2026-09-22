@@ -1,0 +1,61 @@
+# Beacon reads one file. Incidents are an array of tables; updates are an array inside each.
+# Times are TOML date-times and are treated as UTC.
+
+[[incident]]
+id = "2026-09-14-checkout-latency"
+title = "Elevated checkout latency in eu-west"
+severity = "monitoring"
+started = 2026-09-14T08:12:00Z
+components = ["Checkout", "Payments"]
+
+  [[incident.updates]]
+  at = 2026-09-14T08:12:00Z
+  body = "Checkout p95 crossed 4 s in eu-west. Investigating."
+
+  [[incident.updates]]
+  at = 2026-09-14T08:41:00Z
+  body = "Traced to a connection pool exhausted by a slow downstream. Pool size raised."
+
+  [[incident.updates]]
+  at = 2026-09-14T09:05:00Z
+  body = "Latency back under 900 ms. Monitoring before we call it resolved."
+
+[[incident]]
+id = "2026-09-09-webhook-backlog"
+title = "Webhook delivery backlog"
+severity = "resolved"
+started = 2026-09-09T14:30:00Z
+resolved = 2026-09-09T17:10:00Z
+components = ["Webhooks"]
+
+  [[incident.updates]]
+  at = 2026-09-09T14:30:00Z
+  body = "Deliveries queued behind a retry storm from one endpoint returning 500."
+
+  [[incident.updates]]
+  at = 2026-09-09T15:55:00Z
+  body = "Offending endpoint circuit-broken. Queue draining at about 4k/min."
+
+  [[incident.updates]]
+  at = 2026-09-09T17:10:00Z
+  body = "Backlog cleared. Per-endpoint circuit breaking stays on."
+
+[[incident]]
+id = "2026-08-30-api-outage"
+title = "API unavailable for 22 minutes"
+severity = "resolved"
+started = 2026-08-30T03:48:00Z
+resolved = 2026-08-30T04:10:00Z
+components = ["API", "Dashboard"]
+
+  [[incident.updates]]
+  at = 2026-08-30T03:48:00Z
+  body = "All API requests returning 503. Paged."
+
+  [[incident.updates]]
+  at = 2026-08-30T03:59:00Z
+  body = "A bad config rollout removed every upstream from the load balancer. Rolling back."
+
+  [[incident.updates]]
+  at = 2026-08-30T04:10:00Z
+  body = "Rollback complete, traffic normal. Config rollouts now go one zone at a time."

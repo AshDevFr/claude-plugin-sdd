@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Materialise the demo project: a real codebase with a real nested spec repo, in one command.
+#
+# Why a script and not "clone these two repositories". The thing the demo teaches is that `.specs`
+# is a *separate* git repository nested inside the code repository and ignored by it. That shape
+# cannot be committed: a git repository inside a git repository is not a thing git carries. So the
+# plugin ships two git bundles, and this reassembles them into the live shape.
+#
+# Why bundles and not a plain copy with `git init`. Two of the demo's teaching points are made of
+# history. `sdd-report` renders a "Latest commits" card, and the spec repo's own commit history is
+# the clearest evidence for the commit-.specs-in-the-same-turn policy. One synthetic commit in each
+# repository would teach neither, so the real histories travel.
+#
+# The directories beside the bundles, `demo/beacon/` and `demo/beacon-specs/`, are the readable
+# copy: they exist so the demo can be browsed and diffed on a forge. They are NOT what this script
+# uses. `scripts/test-demo.sh` is what stops the two disagreeing.
+#
+# Reaches no network, by construction: everything it needs is inside the plugin.
+#
+# Needs bash and git.
+set -euo pipefail
+
+me=$(basename "$0")
+here=$(cd "$(dirname "$0")" && pwd)
+demo="$here/../demo"
+
+usage() {
+  cat <<USAGE
+$me <directory>
+
+Materialise the demo project into <directory>, which must not already exist or must be empty.
+
+Produces a git repository with the code, and a separate git repository at <directory>/.specs
+holding the PRD, the phase specs, the designs and the task files. The outer repository ignores
+the inner one, which is the shape the whole workflow assumes.
+
+Needs no network: the histories ship inside the plugin as git bundles.
+
+Then:
+
+  cd <directory> && claude
+  /sdd:next-task
+USAGE
+}
+
+die() { printf '%s: %s\n' "$me" "$1" >&2; exit 1; }
+
+case "${1:-}" in
+  ''|-h|--help) usage; [ -n "${1:-}" ] && exit 0 || exit 2 ;;
+esac
+
+target=$1
+[ $# -eq 1 ] || die "one argument, the directory to create. Got $#"
+
+# Refuse rather than write into something the user did not mean. A script whose only argument is a
+# path is one that has to be careful with it.
+if [ -e "$target" ]; then
+  [ -d "$target" ] || die "$target exists and is not a directory"
+  if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+    if [ -e "$target/.git" ]; then
+      die "$target already holds a git repository. Pick a path that does not exist yet"
+    fi
+    die "$target is not empty. Pick a path that does not exist yet"
+  fi
+fi
+
+code_bundle="$demo/beacon.bundle"
+spec_bundle="$demo/beacon-specs.bundle"
+for b in "$code_bundle" "$spec_bundle"; do
+  [ -r "$b" ] || die "missing $b. The plugin's demo/ directory is incomplete"
+done
+
+command -v git >/dev/null 2>&1 || die "git is not installed"
+
+git clone -q "$code_bundle" "$target"
+git clone -q "$spec_bundle" "$target/.specs"
+
+# A clone from a bundle leaves `origin` pointing at the bundle file. Left in place, every
+# materialised demo carries a remote that will not exist once the plugin moves or updates, and the
+# first `git fetch` fails in a way that looks like the demo is broken. There is also nowhere this
+# should be pushed: it is a teaching artifact, not the user's project.
+git -C "$target" remote remove origin 2>/dev/null || true
+git -C "$target/.specs" remote remove origin 2>/dev/null || true
+
+# The outer repository must ignore the inner one. Beacon's own committed .gitignore does this, so
+# it holds on a machine with no global ignore configured at all; check rather than assume, because
+# the failure is silent and is precisely what this demo exists to teach.
+if ! git -C "$target" check-ignore -q .specs 2>/dev/null; then
+  printf '%s: warning: %s does not ignore .specs. The demo will show it as untracked\n' \
+    "$me" "$target" >&2
+fi
+
+printf '%s: %s\n' "$me" "$target"
+printf '  code   %s commits\n' "$(git -C "$target" rev-list --count HEAD)"
+printf '  specs  %s commits, in a separate repository at .specs\n' \
+  "$(git -C "$target/.specs" rev-list --count HEAD)"
+cat <<NEXT
+
+  cd $target && claude
+  /sdd:next-task        picks up the next unfinished task
+  ./run-tests           the verification command every task file names
+
+NEXT

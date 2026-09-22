@@ -1,0 +1,17 @@
+{
+  "name": "/sdd:converge: diffs tasks against code without editing them",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "/sdd:converge",
+  "allowed_tools": ["Read", "Glob", "Grep", "Bash(git:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(find:*)", "Bash(python3:*)", "Bash(wc:*)"],
+  "extract": "raw",
+  "graders": [
+    { "id": "uses-the-verdict-vocabulary", "must_match": "(?i)(SHIPPED|ACTIVE|NO-FILE-PLAN|unverified|verdict)",
+      "why": "the comparison script emits verdicts; a run that reports none has not used it" },
+    { "id": "names-both-tasks", "must_match": "(?s)1\\.01.*1\\.02",
+      "why": "it must report on every task in scope, not just the interesting one" },
+    { "id": "read-only", "must_not_match": "(?i)(I marked|I set the status|I updated 1\\.0|flipped the status)",
+      "why": "the command is read-only by design: automatically flipping a status would manufacture a more confident claim" },
+    { "id": "notices-the-missing-file-plan", "must_match": "(?i)(file plan|cannot (be )?(judge|verif|reconcil)|no checkable)",
+      "why": "neither fixture task has a File Plan, which is exactly the case the command exists to surface" }
+  ]
+}

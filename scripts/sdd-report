@@ -1,0 +1,495 @@
+#!/usr/bin/env python3
+"""Regenerate the generated regions of a project's dashboard report.
+
+The report is part hand-written and part generated. Generated regions sit between
+<!--GEN:name--> and <!--/GEN:name--> and only those are replaced, so status cards, decisions and
+captions the agent wrote survive every run. A missing marker is an error rather than a skipped
+section: a report that silently stops updating one region reads as current when it is not, and a
+stale commit list is exactly what the owner noticed first.
+
+Standard library only. Reads git, the spec repo and the subagent ledgers; writes one file.
+"""
+
+import argparse
+import glob
+import json
+import html
+import os
+import re
+import sys
+import tempfile
+import time
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import sdd_dashboard as common  # noqa: E402
+
+ME = "sdd-report"
+MARKERS = ("generated", "plans", "commits", "tests", "inprogress")
+TEMPLATE = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "..", "skills", "dashboard-upkeep", "report-template.html"
+)
+
+
+class ReportError(Exception):
+    pass
+
+
+# ---- status classification ---------------------------------------------------------------
+# The leading emoji is the author's explicit verdict, so it is read before any word. Matching words
+# first classified "Partly built 2026-09-07" as done because "built" sounds finished.
+EMOJI = (
+    ("🟢", "done"), ("✅", "done"),
+    ("🟡", "running"),
+    ("🔴", "blocked"),
+    ("⏸", "paused"),
+    ("⚪", "queued"), ("🔵", "queued"),
+)
+PARTLY = re.compile(r"\b(partly|partially|partial|built|since)\b", re.I)
+
+# Only for status lines with no emoji at all, which is how task files are written. Ordered so a
+# qualifier ("partly", "blocked") wins over the word it qualifies.
+WORDS = (
+    (re.compile(r"\b(partly|partially|partial)\b", re.I), "partly"),
+    (re.compile(r"\bblocked\b", re.I), "blocked"),
+    (re.compile(r"\bpaused\b", re.I), "paused"),
+    (re.compile(r"\b(not started|draft|planning|planned|todo|to do|pending|proposed|queued)\b", re.I), "queued"),
+    (re.compile(r"\b(in progress|in-progress|wip|started|implementing|underway)\b", re.I), "running"),
+    (re.compile(r"\b(complete|completed|done|verified|implemented|shipped)\b", re.I), "done"),
+    (re.compile(r"\b(approved|accepted)\b", re.I), "accepted"),
+    (re.compile(r"\b(superseded|abandoned|rejected|retired)\b", re.I), "retired"),
+)
+
+PILL_LABEL = {
+    "done": "done", "running": "in progress", "partly": "partly", "blocked": "blocked",
+    "paused": "paused", "queued": "not started", "accepted": "accepted", "retired": "retired",
+    "unknown": "no status",
+}
+
+
+def classify(line):
+    if not line:
+        return "unknown"
+    first = None
+    for emoji, state in EMOJI:
+        i = line.find(emoji)
+        if i >= 0 and (first is None or i < first[0]):
+            first = (i, state)
+    if first:
+        state = first[1]
+        if state == "running" and PARTLY.search(line):
+            return "partly"
+        return state
+    for rx, state in WORDS:
+        if rx.search(line):
+            return state
+    return "unknown"
+
+
+STATUS_RX = re.compile(r"^\s*(?:[-*]\s+)?\*\*Status:?\*\*:?\s*(.*?)\s*$")
+TITLE_RX = re.compile(r"^#\s+(.+?)\s*$")
+
+
+def read_head(path, limit=40):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return [next(f, "") for _ in range(limit)]
+    except OSError:
+        return []
+
+
+def doc_meta(path):
+    """Title and status line of a planning document, from its first lines."""
+    title, status = None, None
+    for line in read_head(path):
+        if title is None:
+            m = TITLE_RX.match(line)
+            if m:
+                title = m.group(1)
+        if status is None:
+            m = STATUS_RX.match(line)
+            if m:
+                status = m.group(1)
+        if title and status:
+            break
+    return title or os.path.splitext(os.path.basename(path))[0], status or ""
+
+
+# ---- path resolution ------------------------------------------------------------------------
+def task_workflow(root):
+    """The `## Task Workflow` keys from the project's CLAUDE.md, as {key: first backticked value}."""
+    keys = {}
+    try:
+        with open(os.path.join(root, "CLAUDE.md"), encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return keys
+    m = re.search(r"^##\s+Task Workflow\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    if not m:
+        return keys
+    for line in m.group(1).splitlines():
+        km = re.match(r"^\s*[-*]\s+\*\*(.+?):?\*\*:?\s*(.*)$", line)
+        if not km:
+            continue
+        vm = re.search(r"`([^`]+)`", km.group(2))
+        keys[km.group(1).strip().rstrip(":").lower()] = vm.group(1) if vm else km.group(2).strip()
+    return keys
+
+
+def resolve_paths(root):
+    keys = task_workflow(root)
+
+    def absolute(p):
+        return os.path.normpath(os.path.join(root, p))
+
+    spec_repo = absolute(keys.get("spec repo", ".specs/"))
+    docs = os.path.join(spec_repo, "docs")
+
+    specs_key = keys.get("phase specs", ".specs/docs/specs/phase-N_<title>.md")
+    base = os.path.basename(specs_key)
+    pm = re.match(r"(.*?)N[_-]", base)
+    spec_prefix = pm.group(1) if pm else "phase-"
+    specs_dir = absolute(os.path.dirname(specs_key)) if "/" in specs_key else os.path.join(docs, "specs")
+
+    # A Task Directory with a placeholder component (tasks/phase-N/) means one subdirectory per
+    # phase; the placeholder and everything after it are dropped to find the root.
+    tasks_key = keys.get("task directory", ".specs/docs/tasks/")
+    parts = [p for p in tasks_key.split("/") if p]
+    cut = next((i for i, p in enumerate(parts) if re.search(r"(^|[-_])N$", p)), None)
+    tasks_dir = absolute("/".join(parts[:cut] if cut is not None else parts))
+
+    plan_key = keys.get("implementation plan", "")
+    if "/" in plan_key:
+        plans_dir = absolute(os.path.dirname(plan_key))
+    else:
+        plans_dir = os.path.join(docs, "plans")
+
+    return {
+        "specs": specs_dir, "spec_prefix": spec_prefix, "tasks": tasks_dir,
+        "plans": plans_dir, "designs": os.path.join(docs, "designs"),
+    }
+
+
+# ---- rendering helpers -------------------------------------------------------------------------
+def esc(s):
+    return html.escape(str(s), quote=True)
+
+
+def pill(state):
+    return f'<span class="pill {state}">{PILL_LABEL.get(state, state)}</span>'
+
+
+def bar(done, total, label):
+    pct = int(round(100 * done / total)) if total else 0
+    return (
+        f'<div class="progress"><div class="progress-track"><div class="progress-fill" '
+        f'style="width:{pct}%"></div></div><span class="progress-label">{done} / {total} {esc(label)}'
+        f"</span></div>"
+    )
+
+
+def table(head, rows):
+    if not rows:
+        return ""
+    th = "".join(f"<th>{h}</th>" for h in head)
+    body = "\n".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    return f'<div class="table-wrap"><table><thead><tr>{th}</tr></thead><tbody>\n{body}\n</tbody></table></div>'
+
+
+def natural_key(s):
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
+
+
+# ---- generated sections ---------------------------------------------------------------------------
+def section_plans(project, repo):
+    paths = resolve_paths(project)
+    out = []
+
+    specs = sorted(glob.glob(os.path.join(paths["specs"], paths["spec_prefix"] + "*.md")), key=natural_key)
+    out.append("<h3>Phase specs</h3>")
+    if specs:
+        rows, built = [], 0
+        for s in specs:
+            title, status = doc_meta(s)
+            state = classify(status)
+            built += state == "done"
+            rows.append((esc(title), pill(state), esc(status)))
+        out.append(bar(built, len(specs), "phases built"))
+        out.append(table(("Phase", "State", "Status"), rows))
+    else:
+        out.append(f'<p class="muted">No phase specs in <code>{esc(paths["specs"])}</code>.</p>')
+
+    plans = glob.glob(os.path.join(paths["plans"], "*.md"))
+    # Dated filenames sort by date; anything undated falls back to modification time.
+    plans.sort(key=lambda p: (os.path.basename(p)[:10] if re.match(r"\d{4}-\d{2}-\d{2}", os.path.basename(p))
+                              else time.strftime("%Y-%m-%d", time.localtime(os.path.getmtime(p))),
+                              os.path.basename(p)), reverse=True)
+    out.append("<h3>Implementation plans</h3>")
+    if plans:
+        items = []
+        for p in plans:
+            title, status = doc_meta(p)
+            state = classify(status)
+            # No per-plan progress bar. The one that used to be here counted `### Task N`
+            # headings against another plugin's scratch ledger: a document format this plugin
+            # does not produce, read from a directory it does not own. It rendered for nobody
+            # using these templates, and it made the dashboard depend on a plugin overlapping
+            # this one. A plan's state is its own Status field, shown beside it.
+            extra = ""
+            items.append(
+                f'<li><div class="row"><span class="name">{esc(title)}</span>{pill(state)}</div>'
+                f'<div class="muted small">{esc(os.path.basename(p))} &middot; {esc(status)}</div>{extra}</li>'
+            )
+        out.append('<ul class="doclist">' + "\n".join(items) + "</ul>")
+    else:
+        out.append(f'<p class="muted">No plans in <code>{esc(paths["plans"])}</code>.</p>')
+
+    designs = sorted(glob.glob(os.path.join(paths["designs"], "*.md")), reverse=True)
+    out.append("<h3>Designs</h3>")
+    if designs:
+        rows = []
+        for dsg in designs:
+            title, status = doc_meta(dsg)
+            rows.append((esc(title), pill(classify(status)), esc(status)))
+        out.append(table(("Design", "State", "Status"), rows))
+    else:
+        out.append(f'<p class="muted">No designs in <code>{esc(paths["designs"])}</code>.</p>')
+
+    out.append("<h3>Task files</h3>")
+    files = [f for f in glob.glob(os.path.join(paths["tasks"], "**", "*.md"), recursive=True)
+             if re.match(r"\d+\.\d+", os.path.basename(f))]
+    if files:
+        groups = {}
+        for f in files:
+            rel = os.path.relpath(os.path.dirname(f), paths["tasks"])
+            group = rel if rel != "." else "phase-" + os.path.basename(f).split(".")[0]
+            groups.setdefault(group, []).append(f)
+        for group in sorted(groups, key=natural_key):
+            rows, done = [], 0
+            for f in sorted(groups[group], key=lambda x: natural_key(os.path.basename(x))):
+                title, status = doc_meta(f)
+                state = classify(status)
+                done += state == "done"
+                rows.append((esc(os.path.splitext(os.path.basename(f))[0]), pill(state), esc(status)))
+            total = len(rows)
+            is_open = " open" if done < total else ""
+            out.append(
+                f'<details{is_open}><summary><span class="name">{esc(group)}</span>'
+                f' <span class="muted">{done} / {total} done</span></summary>'
+                + table(("Task", "State", "Status"), rows) + "</details>"
+            )
+    else:
+        out.append(f'<p class="muted">No task files in <code>{esc(paths["tasks"])}</code>.</p>')
+
+    return "\n".join(out)
+
+
+def tz_label():
+    return time.strftime("%Z (UTC%z)")
+
+
+def section_commits(repo, count):
+    if common.git(repo, "rev-parse", "--git-dir") is None:
+        return '<p class="muted">Not a git repository.</p>'
+    head = common.git(repo, "log", "-1", "--date=format-local:%Y-%m-%d %H:%M", "--format=%h%x1f%ad%x1f%s")
+    if not head:
+        return '<p class="muted">No commits yet.</p>'
+    branch = common.git(repo, "symbolic-ref", "--short", "-q", "HEAD") or "detached HEAD"
+    sha, date, subject = head.split("\x1f", 2)
+    log = common.git(repo, "log", f"-n{count}", "--date=format-local:%Y-%m-%d %H:%M",
+                     "--format=%h%x1f%ad%x1f%s%x1e") or ""
+    rows = []
+    for rec in log.split("\x1e"):
+        rec = rec.strip("\n")
+        if not rec:
+            continue
+        s, d, subj = rec.split("\x1f", 2)
+        rows.append((f"<code>{esc(s)}</code>", f'<span class="nowrap">{esc(d)}</span>', esc(subj)))
+    return (
+        f'<p class="head-line">HEAD <code>{esc(sha)}</code> on <strong>{esc(branch)}</strong>'
+        f' &middot; {esc(date)} &middot; {esc(subject)}</p>\n'
+        + table(("Commit", f"Date, {esc(tz_label())}", "Subject"), rows)
+    )
+
+
+def section_tests(project, repo):
+    """The last measured test result, or an honest absence.
+
+    This card was written by hand, which made it a claim rather than a reading. The rule to keep
+    it current already existed and did not hold on its author, and a rule already broken by the
+    person who wrote it is not a control. So: read it, or say it has never been read.
+    """
+    newest, meta = None, None
+    for path in glob.glob(os.path.join(repo, "evals", "results", "*", "meta.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        stamp = data.get("stamp") or os.path.basename(os.path.dirname(path))
+        if newest is None or stamp > newest:
+            newest, meta = stamp, data
+
+    if meta is None:
+        return ('<div class="value"><span class="muted">never run here</span>'
+                '<p class="muted small">No <code>evals/results/*/meta.json</code>. This is a reading, '
+                'not a claim: nothing has measured this project.</p></div>')
+
+    results = meta.get("plugin_results") or {}
+    total = sum(v.get("cases", 0) for v in results.values())
+    passed = sum(v.get("passed", 0) for v in results.values())
+    ok = meta.get("suite_passed") and total and passed == total
+    pill = "done" if ok else "blocked"
+    word = "passed" if ok else "FAILED"
+    when = str(meta.get("stamp", ""))[:8]
+    when = f"{when[:4]}-{when[4:6]}-{when[6:8]}" if len(when) == 8 else meta.get("stamp", "?")
+    head = str(meta.get("head", ""))[:7]
+    filt = meta.get("filter") or ""
+    scope = f"only <code>{esc(filt)}</code>" if filt else "the whole suite"
+    dirty = [k for k, v in (meta.get("plugin_trees") or {}).items() if v != "clean"]
+
+    out = [f'<div class="value"><span class="pill {pill}">{passed} / {total} {word}</span>']
+    out.append(f'<p class="muted small">{scope}, {esc(when)}, at <code>{esc(head)}</code>. '
+               f'<code>RUNS={esc(str(meta.get("runs", "?")))}</code>.</p>')
+    if dirty:
+        out.append('<p class="muted small">Measured against an uncommitted tree for '
+                   f'{esc(", ".join(sorted(dirty)))}, so the commit above does not describe what ran.</p>')
+    out.append('<p class="muted small">This says a suite passed at that commit, not that it passes '
+               'at the current one. <code>check-evals-fresh.sh</code> answers that.</p>')
+    out.append("</div>")
+    return "\n".join(out)
+
+
+def section_inprogress(project, repo):
+    """Task files whose Status says In Progress. There is no durable record of what an agent is
+    doing at this instant, and inventing one would be a second claim to keep current."""
+    paths = resolve_paths(project)
+    rx = re.compile(r"^\*\*Status:\*\*[ \t]*(?:🟡[ \t]*)?(?:In Progress|In-Progress|WIP)", re.M | re.I)
+    found = []
+    for f in sorted(glob.glob(os.path.join(paths["tasks"], "**", "*.md"), recursive=True)):
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                head = fh.read(4000)
+        except OSError:
+            continue
+        if rx.search(head):
+            title, _status = doc_meta(f)
+            found.append((os.path.splitext(os.path.basename(f))[0], title))
+
+    if not found:
+        return ('<div class="value"><span class="muted">nothing marked in progress</span>'
+                '<p class="muted small">Read from the task files, not typed here.</p></div>')
+    items = "".join(f"<li><code>{esc(n)}</code> &middot; {esc(t)}</li>" for n, t in found)
+    note = ("" if len(found) < 3 else
+            '<p class="muted small">Three or more at once is usually a status left behind rather '
+            'than work genuinely running in parallel.</p>')
+    return f'<div class="value"><ul class="links">{items}</ul>{note}</div>'
+
+
+def section_generated():
+    return f'<span class="generated">Generated {esc(time.strftime("%Y-%m-%d %H:%M"))} {esc(tz_label())}</span>'
+
+
+# ---- marker replacement ----------------------------------------------------------------------------
+# Markers introduced after a report was scaffolded. A report written before they existed has
+# none, and treating that as an error would stop every existing dashboard regenerating at all,
+# including the commits and plans it has always had. Absence means "this report predates it";
+# a duplicate still means the file is mangled.
+OPTIONAL_MARKERS = ("tests", "inprogress")
+
+
+def replace_markers(text, sections, missing=None):
+    for name, body in sections.items():
+        opens = text.count(f"<!--GEN:{name}-->")
+        closes = text.count(f"<!--/GEN:{name}-->")
+        if opens == 0 and closes == 0 and name in OPTIONAL_MARKERS:
+            if missing is not None:
+                missing.append(name)
+            continue
+        if opens != 1 or closes != 1:
+            raise ReportError(
+                f"marker '{name}' must appear exactly once as <!--GEN:{name}--> ... <!--/GEN:{name}-->"
+                f" (found {opens} opening, {closes} closing)"
+            )
+        rx = re.compile(rf"<!--GEN:{re.escape(name)}-->.*?<!--/GEN:{re.escape(name)}-->", re.S)
+        if not rx.search(text):
+            raise ReportError(f"marker '{name}' closes before it opens")
+        text = rx.sub(lambda _m: f"<!--GEN:{name}-->\n{body}\n<!--/GEN:{name}-->", text, count=1)
+    return text
+
+
+def write_atomic(path, text):
+    # The server may read the file at any moment; a rename means it sees the old page or the new
+    # one, never half of one.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".report-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog=ME, description=__doc__.split("\n\n")[0])
+    ap.add_argument("--project", default=os.getcwd(), help="project checkout to read (default: cwd)")
+    ap.add_argument("--dir", help="dashboard directory (default: resolved per project, or $SDD_DASHBOARD_DIR)")
+    ap.add_argument("--commits", type=int, default=40, help="how many commits to list (default 40)")
+    ap.add_argument("--init", action="store_true", help="scaffold report.html from the template if missing")
+    ap.add_argument("--if-exists", action="store_true",
+                    help="exit 0 silently when the project has no dashboard report")
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args(argv)
+
+    project = common.repo_root(os.path.abspath(args.project))
+    base = common.dashboard_dir(project, args.dir)
+    content = os.path.join(base, "content")
+    report = os.path.join(content, "report.html")
+
+    if not os.path.isfile(report):
+        if args.if_exists:
+            return 0
+        if not args.init:
+            print(f"{ME}: no report at {report}. Run with --init to scaffold one.", file=sys.stderr)
+            return 2
+        os.makedirs(content, exist_ok=True)
+        with open(TEMPLATE, encoding="utf-8") as f:
+            scaffold = f.read().replace("{{PROJECT}}", esc(common.project_name(project)))
+        write_atomic(report, scaffold)
+        if not args.quiet:
+            print(f"{ME}: scaffolded {report}")
+
+    with open(report, encoding="utf-8") as f:
+        text = f.read()
+    # Spec docs live in the main checkout's spec repo even when this runs from a worktree without one.
+    spec_root = project if os.path.isdir(os.path.join(project, ".specs")) else common.main_root(project)
+    missing = []
+    try:
+        text = replace_markers(text, {
+            "generated": section_generated(),
+            "plans": section_plans(spec_root, project),
+            "commits": section_commits(project, args.commits),
+            "tests": section_tests(spec_root, project),
+            "inprogress": section_inprogress(spec_root, project),
+        }, missing)
+    except ReportError as e:
+        print(f"{ME}: {report}: {e}", file=sys.stderr)
+        return 1
+    write_atomic(report, text)
+    if not args.quiet:
+        print(f"{ME}: regenerated {report}")
+        if missing:
+            names = ", ".join(sorted(missing))
+            print(f"{ME}: this report predates the {names} card(s), so they were skipped. "
+                  f"Add the marker pair from report-template.html to pick them up, or the card "
+                  f"stays hand-written.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

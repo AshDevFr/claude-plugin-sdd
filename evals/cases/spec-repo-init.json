@@ -1,0 +1,39 @@
+{
+  "name": "/sdd:spec-repo-init: plans the nested repo and asks before creating it",
+  "fixture": "bare.sh",
+  "prompt": "/sdd:spec-repo-init widgetd",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "names-the-project",
+      "must_match": "(?i)widgetd-specs",
+      "why": "the derived spec repo name shows it planned the layout; the bare name is in the prompt"
+    },
+    {
+      "id": "plans-the-layout",
+      "must_match": "(?is)(?=.*\\.specs\\b)(?=.*\\bspecs/)(?=.*\\btasks/)",
+      "why": "the layout is what is being created. All three names, wherever they sit: one run put the directories under a 'What goes in docs/' heading, so docs/ and specs/ were never adjacent and a pattern wanting them together missed a correct answer"
+    },
+    {
+      "id": "asks-before-creating",
+      "must_match": "(?i)(confirm|before I create|shall I|should I|tell me|say so if)",
+      "why": "it must not create a repo unasked"
+    },
+    {
+      "id": "did-not-create-yet",
+      "must_not_match": "(?i)(I have created|initialised the repo|the spec repo (now )?exists)",
+      "why": "creating before confirmation is the failure this checks for"
+    }
+  ]
+}

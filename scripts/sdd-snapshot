@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+# Record the practice metrics that are cheap to measure, as a dated file.
+#
+# Why this exists. Every mechanism the practice assessment asked for got built, and not one of
+# the measurements it asked for got taken. That asymmetry is the thing the assessment scored in
+# the first place, and it survived the project meant to fix it, because building is a task and
+# measuring is a habit. A habit with no command behind it does not happen.
+#
+# The proof is in the numbers this prints. The Task-to-Read ratio has not moved from 26:538 since
+# the assessment was written. Nothing was wrong, and nothing said so, because nobody looked.
+#
+# It measures only what can be read without a network call, a model invocation or a UI. Anything
+# needing those is printed as an explicit manual step rather than silently omitted, because a
+# snapshot that quietly drops the expensive half reads as complete when it is not.
+#
+# Writes into the spec repo's analysis directory when there is one, so the record accumulates
+# beside the work rather than in a home directory nobody diffs. Without a spec repo it prints and
+# says where it would have written.
+#
+# Needs bash and jq. `claude` and `python3` each add a section and their absence is reported, not
+# fatal: a snapshot missing one number is worth more than no snapshot.
+set -uo pipefail
+
+me="sdd-snapshot"
+print_only=0
+out_dir=""
+for a in "$@"; do
+  case "$a" in
+    --print) print_only=1 ;;
+    --out=*) out_dir="${a#--out=}" ;;
+    -h|--help)
+      cat <<'USAGE'
+sdd-snapshot [--print] [--out=DIR]
+
+Records the practice metrics that can be measured without a network call, a model
+invocation or a UI, as a dated markdown file.
+
+  --print       write nothing, print the report only
+  --out=DIR     write here instead of the spec repo's analysis directory
+
+Run it before a change you expect to move a number, and again after. The value is
+in the pair, never in a single reading.
+USAGE
+      exit 0 ;;
+    *) printf '%s: unexpected argument: %s\n' "$me" "$a" >&2; exit 2 ;;
+  esac
+done
+
+command -v jq >/dev/null 2>&1 || { printf '%s: needs jq\n' "$me" >&2; exit 2; }
+
+now=$(date '+%Y-%m-%d %H:%M:%S %Z')
+day=$(date '+%Y-%m-%d')
+home="${HOME}"
+report=""
+add() { report="$report$1
+"; }
+
+add "# Practice snapshot, $day"
+add ""
+add "Taken $now by \`$me\`. Every number below is read from disk; nothing here was estimated."
+add ""
+
+# ---- always-loaded context -------------------------------------------------
+# The cost paid on every message of every session. `claude plugin details` reports it per plugin,
+# and it counts frontmatter descriptions rather than bodies, which is the correction that made the
+# original "split the long skills" advice inapplicable.
+add "## Always-loaded context"
+add ""
+if command -v claude >/dev/null 2>&1; then
+  total=0; rows=""
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    tok=$(claude plugin details "$p" 2>/dev/null |
+          sed -n 's/.*Always-on: *~*\([0-9,]*\) tok.*/\1/p' | head -1 | tr -d ',')
+    [ -n "$tok" ] || continue
+    rows="$rows| \`$p\` | $tok |
+"
+    total=$((total + tok))
+  done <<EOF
+$(claude plugin list --json 2>/dev/null | jq -r '.[] | select(.enabled) | .id' 2>/dev/null |
+  sed 's/@.*//' | sort -u)
+EOF
+  if [ -n "$rows" ]; then
+    add "| Plugin | Always-on tokens |"
+    add "|---|---|"
+    report="$report$rows"
+    add "| **total** | **$total** |"
+  else
+    add "\`claude plugin details\` returned no token line. Format may have changed."
+  fi
+else
+  add "Not measured: the \`claude\` CLI is not on PATH."
+fi
+add ""
+
+# ---- parallelism proxy -----------------------------------------------------
+# The assessment's own proxy for how much exploration has moved off the main thread. It is a
+# ratio rather than a count so it stays comparable as usage grows.
+add "## Parallelism"
+add ""
+cj="$home/.claude.json"
+if [ -r "$cj" ]; then
+  read -r task read_n <<EOF
+$(jq -r '[.. | objects | select(has("toolUsage")) | .toolUsage] | add // {}
+         | "\(.Task.usageCount // 0) \(.Read.usageCount // 0)"' "$cj" 2>/dev/null || echo "0 0")
+EOF
+  if [ "${read_n:-0}" -gt 0 ] 2>/dev/null; then
+    pct=$(awk -v t="$task" -v r="$read_n" 'BEGIN{printf "%.1f", (t/r)*100}')
+    add "\`Task\` dispatches against \`Read\` calls: **$task : $read_n** (${pct}%)."
+    add ""
+    add "Rising means exploration is moving into isolated subagent context instead of the main"
+    add "thread. Flat means the delegation machinery exists and is not being reached for."
+  else
+    add "Not measured: no \`toolUsage\` counts found in \`~/.claude.json\`."
+  fi
+else
+  add "Not measured: \`~/.claude.json\` is not readable."
+fi
+add ""
+
+# ---- session hygiene -------------------------------------------------------
+# Long sessions are where context rot lives, so the number that matters is the size of the big
+# ones rather than the total.
+add "## Session hygiene"
+add ""
+proj="$home/.claude/projects"
+if [ -d "$proj" ]; then
+  n=$(find "$proj" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+  mb=$(du -sm "$proj" 2>/dev/null | awk '{print $1}')
+  projects=$(find "$proj" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  add "| | |"
+  add "|---|---|"
+  add "| Transcripts | $n |"
+  add "| Projects | $projects |"
+  add "| Total on disk | ${mb} MB |"
+  if [ "${n:-0}" -gt 0 ] 2>/dev/null && [ -n "${mb:-}" ]; then
+    add "| Mean per transcript | $(awk -v m="$mb" -v c="$n" 'BEGIN{printf "%.1f", m/c}') MB |"
+  fi
+  # Strip the directory portion only. Stripping to the last slash across the whole line also ate
+  # the size column, which is the half worth reading.
+  big=$(du -sm "$proj"/* 2>/dev/null | sort -rn | head -3 |
+        awk '{n=$2; sub(/.*\//, "", n); printf "%s MB  %s\n", $1, n}')
+  if [ -n "$big" ]; then
+    add ""
+    add "Largest three projects by transcript volume:"
+    add ""
+    report="$report$(printf '%s\n' "$big" | sed 's/^/- /')
+"
+  fi
+else
+  add "Not measured: no \`~/.claude/projects\`."
+fi
+add ""
+
+# ---- spec drift ------------------------------------------------------------
+# Only meaningful in a project that has task files. The engine is read-only by design: it reports
+# what the File Plans claim against what is on disk and never edits a status.
+add "## Spec drift, this project"
+add ""
+root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+tasks="${root:+$root/.specs/docs/tasks}"
+conv=""
+if [ -n "$root" ] && [ -d "${tasks:-/nonexistent}" ] && command -v python3 >/dev/null 2>&1; then
+  eng=$(find "$home/.claude/plugins/cache" -name task-converge.py 2>/dev/null | sort | tail -1)
+  # Beside this script first: it is the one path that is right wherever the plugin lives, whether
+  # installed or run from a checkout of a marketplace or of the plugin published on its own.
+  [ -n "$eng" ] && [ -r "$eng" ] || \
+    eng="$(cd "$(dirname "$0")/.." && pwd)/skills/tidying-spec-repos/scripts/task-converge.py"
+  if [ -r "$eng" ]; then
+    conv=$(mktemp)
+    if python3 "$eng" "$tasks" --json "$conv" --quiet >/dev/null 2>&1; then
+      add "$(jq -r '.summary | to_entries | sort_by(-.value)
+                    | map("| \(.key) | \(.value) |") | join("\n")' "$conv" 2>/dev/null |
+            sed '1i\
+| Verdict | Tasks |\
+|---|---|')"
+      unver=$(jq -r '[.summary["CLAIMED-UNBUILT"] // 0, .summary["NO-FILE-PLAN"] // 0] | add' "$conv" 2>/dev/null)
+      add ""
+      add "Unverifiable or unconfirmed: **$unver**. A CLAIMED-UNBUILT verdict is evidence about"
+      add "paths and not about behaviour, so read it as a prompt to check rather than as a defect."
+    else
+      add "Not measured: the converge engine failed to run."
+    fi
+    rm -f "$conv"
+  else
+    add "Not measured: the converge engine was not found."
+  fi
+elif [ -z "$root" ]; then
+  add "Not measured: not inside a git repository."
+elif ! command -v python3 >/dev/null 2>&1; then
+  add "Not measured: python3 is absent, and the converge engine needs it."
+else
+  add "Not applicable: this project has no \`.specs/docs/tasks\`."
+fi
+add ""
+
+# ---- evals -----------------------------------------------------------------
+# Deliberately does not compute a score from stale artefacts. Grading is a separate step and a
+# number recovered from an old results directory would be a claim about a suite that has since
+# changed. The date is the honest thing to record.
+add "## Evals"
+add ""
+if [ -n "$root" ] && [ -d "$root/evals/results" ]; then
+  last=$(find "$root/evals/results" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -1)
+  if [ -n "$last" ]; then
+    stamp=$(basename "$last")
+    runs=$(find "$last" -name '*.json' ! -name '*.err' 2>/dev/null | wc -l | tr -d ' ')
+    add "Last run \`$stamp\`, $runs case-runs recorded."
+  else
+    add "No runs recorded yet."
+  fi
+  add ""
+  add "**pass rate and pass^3 are deliberately not reported here.** They require grading, so a"
+  add "figure lifted from an old results directory would describe a suite that has since changed."
+  add "Run \`./evals/run.sh\` when you want the number. The suite lives in the plugin marketplace"
+  add "checkout, not in this project: \`\$SDD_MARKETPLACE/evals/run.sh\` when that is set."
+else
+  add "Not applicable: no \`evals/results\` in this project."
+fi
+add ""
+
+# ---- learnings captured -----------------------------------------------------
+# The capture marker only works when someone remembers it, and a marker nobody uses looks
+# exactly like a workflow with nothing to learn. A count turns that silence into a number.
+add "## Learnings captured"
+add ""
+central="${XDG_STATE_HOME:-$HOME/.local/state}/sdd/learnings.jsonl"
+if [ -r "$central" ]; then
+  total=$(wc -l < "$central" | tr -d ' ')
+  # Since the previous snapshot, so consecutive files read as a rate rather than a running total.
+  # out_dir is resolved after the report is built, so find the previous snapshot from the repo
+  # root, which is known by this point.
+  prev=""
+  prev_dir="${out_dir:-}"
+  [ -n "$prev_dir" ] || { [ -n "$root" ] && prev_dir="$root/.specs/docs/analysis"; }
+  if [ -n "$prev_dir" ] && [ -d "$prev_dir" ]; then
+    prev=$(find "$prev_dir" -maxdepth 1 -name 'practice-snapshot-*.md' 2>/dev/null | sort | tail -1)
+  fi
+  since=""
+  if [ -n "$prev" ]; then
+    prev_date=$(basename "$prev" .md | sed 's/practice-snapshot-//')
+    since=$(awk -v d="$prev_date" -F'"' '$0 ~ /"date"/ { for (i=1;i<=NF;i++) if ($i=="date") { if ($(i+2) > d) n++ } } END { print n+0 }' "$central" 2>/dev/null)
+  fi
+  add "Central stream: **$total** entries, in \`$central\`."
+  if [ -n "$prev" ] && [ -n "$since" ]; then
+    add ""
+    add "Since the previous snapshot ($(basename "$prev" .md | sed 's/practice-snapshot-//')): **$since**."
+    if [ "$since" = "0" ]; then
+      add ""
+      add "Zero is a finding, not a blank. Either nothing was worth recording, or the \`TIL:\` marker"
+      add "is not being reached for. The improver has nothing new to work from either way."
+    fi
+  fi
+  add ""
+  add "By project:"
+  add ""
+  add "| Project | Entries |"
+  add "|---|---|"
+  while IFS=$'\t' read -r count proj; do
+    [ -n "$proj" ] || continue
+    add "| \`$proj\` | $count |"
+  done < <(jq -r '.project' "$central" 2>/dev/null | sort | uniq -c | sort -rn | awk '{print $1"\t"$2}')
+  add ""
+  add "One project dominating means the marker travels with a habit rather than with the workflow."
+else
+  add "No central stream at \`$central\` yet, so nothing has been captured with \`TIL:\` on this"
+  add "machine. The improver reads that file; without it, it only ever sees this project's own log."
+fi
+add ""
+
+# ---- what this cannot reach ------------------------------------------------
+add "## Not measured here, and why"
+add ""
+add "| Metric | Why | How to get it |"
+add "|---|---|---|"
+add "| Prompt-cache hit rate | Needs an interactive session | \`/usage\`, read the Prompt cache line |"
+add "| Eval pass^3 | Needs grading, and the suite is in the marketplace checkout | \`\$SDD_MARKETPLACE/evals/run.sh\` |"
+add "| Wall-clock of fan-out vs one session | Needs an experiment, not a reading | Run one migration both ways |"
+add ""
+add "A snapshot that omitted these silently would read as complete. They are listed so the gap is"
+add "visible every time the file is opened."
+
+# ---- emit ------------------------------------------------------------------
+printf '%s' "$report"
+
+[ "$print_only" -eq 1 ] && exit 0
+
+if [ -z "$out_dir" ]; then
+  if [ -n "$root" ] && [ -d "$root/.specs/docs" ]; then
+    out_dir="$root/.specs/docs/analysis"
+  else
+    printf '\n%s: no spec repo here, so nothing was written. Use --out=DIR to place it.\n' "$me"
+    exit 0
+  fi
+fi
+
+mkdir -p "$out_dir" 2>/dev/null || { printf '\n%s: could not create %s\n' "$me" "$out_dir" >&2; exit 1; }
+dest="$out_dir/practice-snapshot-$day.md"
+printf '%s' "$report" > "$dest" || { printf '\n%s: could not write %s\n' "$me" "$dest" >&2; exit 1; }
+printf '\n%s: written to %s\n' "$me" "$dest"

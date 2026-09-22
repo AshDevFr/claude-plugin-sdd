@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status page layout, and what breaks at 360 px</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+.frames{display:flex;gap:1.5rem;flex-wrap:wrap;margin:1.2rem 0 0}
+.frame{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:1rem;flex:1 1 20rem}
+.frame h3{margin:0 0 .2rem;font-size:.95rem}
+.frame .w{color:var(--muted);font-size:.8rem;margin:0 0 .9rem}
+.pg{border:1px solid var(--line);border-radius:6px;padding:.8rem;font-size:.82rem;line-height:1.5}
+.pg .hl{font-weight:650;margin:0 0 .5rem}
+.pg .inc{border-top:1px solid var(--line);padding-top:.6rem;margin-top:.6rem}
+.pg .meta{color:var(--muted);font-size:.75rem}
+.narrow .pg{width:360px;max-width:100%;overflow:hidden}
+.bad{color:#ef5f57;font-weight:650}
+.note{border-left:3px solid var(--accent);padding:.1rem 0 .1rem .8rem;margin:1.2rem 0 0;
+color:var(--muted);font-size:.9rem;max-width:44rem}
+.dot{display:inline-block;width:.7rem;height:.7rem;border-radius:50%;margin-right:.4rem;vertical-align:-1px}
+</style>
+</head>
+<body>
+<main>
+<p class="tag">Mockup, not the product</p>
+<h1>Status page layout, and what breaks at 360 px</h1>
+<p class="lede">No choices on this page, just the thing to look at. This is the shape the page has
+now and the one bug the phone audit found, which is what task 2.05 is actually fixing.</p>
+
+<div class="frames">
+  <div class="frame">
+    <h3>Desktop</h3>
+    <p class="w">832 px and wider</p>
+    <div class="pg">
+      <p class="hl"><span class="dot" style="background:#e2b54f"></span>Monitoring</p>
+      <p class="meta">Updated 2026-09-14 09:20 UTC</p>
+      <div class="inc">
+        <strong>Elevated checkout latency in eu-west</strong>
+        <p class="meta">Monitoring &middot; 2026-09-14 08:12 UTC &middot; ongoing</p>
+        <p class="meta">Affected: Checkout, Payments</p>
+      </div>
+      <div class="inc">
+        <strong>Webhook delivery backlog</strong>
+        <p class="meta">Resolved &middot; 2026-09-09 14:30 UTC &middot; lasted 2 h 40 min</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame narrow">
+    <h3>Phone, as it is now</h3>
+    <p class="w">360 px &middot; <span class="bad">the bug</span></p>
+    <div class="pg">
+      <p class="hl"><span class="dot" style="background:#e2b54f"></span>Monitoring</p>
+      <div class="inc">
+        <strong>Elevated checkout latency in eu-west</strong>
+        <p class="meta" style="white-space:nowrap">Monitoring &middot; 2026-09-14 08:12 UTC &middot; ongoing</p>
+        <p class="meta">Affected: Checkout, Payments</p>
+      </div>
+    </div>
+    <p class="meta" style="margin-top:.6rem">The badge and the timestamp share one line that will
+      not wrap, so a long component list pushes the time off the right edge. Reducing padding does
+      not fix it.</p>
+  </div>
+</div>
+
+<p class="note">The audit found this rather than the thing that was anticipated, which was
+padding. Padding is done; the wrapping is the remaining work in task 2.05. The severity colours
+above are phase 1 placeholders and not a decision: the four candidates are on the
+<a href="severity.html">severity page</a>.</p>
+
+<footer>Mockup for phase 2, published 2026-09-12. The real page is produced by
+<code>beacon-cli render</code>.</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,50 @@
+{
+  "name": "/sdd:brainstorm: classifies, asks one question, and writes no document",
+  "fixture": "specrepo.sh",
+  "prompt": "/sdd:brainstorm let readers subscribe to a widget and get notified when it changes",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "states-its-classification",
+      "must_match": "(?i)(question|bounded|new ground)",
+      "why": "step 1 requires the level and the reason to be said out loud before anything is asked. Deciding silently is how a one-line fix acquires a design document and a new subsystem acquires none, and saying it is what lets the user overrule it"
+    },
+    {
+      "id": "asks-something",
+      "must_match": "(?i)(\\?|which|what |how |would you)",
+      "why": "a dialogue command that proposes without asking has skipped its whole purpose. This request is deliberately underspecified: transport, delivery guarantees and who may subscribe are all open"
+    },
+    {
+      "id": "one-question-per-turn",
+      "must_not_match": "(?i)\\?[^?]{0,400}\\?[^?]{0,400}\\?",
+      "why": "three or more questions in one turn is the failure the one-per-turn rule exists for: answered together they are optimised against each other in a single breath, and the questions worth asking second never get asked. Two is tolerated as a compound sentence; three is a questionnaire",
+      "violating_example": "What transport? Should it be push or pull? And who can subscribe?"
+    },
+    {
+      "id": "did-not-write-a-plan",
+      "must_not_match": "(?i)(I have (written|created)|written to|created) .{0,40}(plan|phase spec|task file)",
+      "why": "this command hands an approved design to /sdd:plan or /sdd:generate-specs and never produces the durable document itself. A dialogue command emitting its own format produces a one-shot briefing with no status header, no dates and no progress log, and then two documents disagree about the same work",
+      "violating_example": "I have created the plan at .specs/docs/plans/2026-09-22-subscriptions.md"
+    },
+    {
+      "id": "did-not-implement",
+      "must_not_match": "(?i)(I(?:'ve| have)? (implemented|added|wrote the code)|here.{0,3}s the implementation)",
+      "why": "the approval gate sits before implementation at every level. A session that designs and implements in the same turn has removed the only review its own design was going to get",
+      "violating_example": "I've implemented the subscription model in src/subscriptions.py"
+    },
+    {
+      "id": "no-boilerplate-question-bank",
+      "must_not_match": "(?i)(who are the stakeholders|what.{0,5}s the (estimated )?timeline|rollback strategy|priority level)",
+      "why": "same reason as /sdd:plan: those have an answer for every project, which is why they are worthless, and they spend the five-question budget before reaching what this request actually left open"
+    }
+  ]
+}

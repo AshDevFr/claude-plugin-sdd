@@ -1,0 +1,102 @@
+<!--
+  Project dashboard. Two kinds of region:
+
+  - Between a GEN:name marker comment and its /GEN:name closing comment: written by sdd-report
+    on every run. Never edit inside them; the next commit overwrites the edit. The markers are
+    not spelled out here because a second copy of one makes the generator refuse the file.
+  - Everything else: hand-written by the agent and kept across regenerations.
+
+  Placeholders carry class="todo" so an unfilled section reads as unfilled, not as a claim.
+  Images go in the dashboard content directory and are linked as /files/<name>.
+
+  There is no style block: the server's frame styles the report, so a design change reaches
+  every existing report without touching it. Each h2 becomes a foldable section listed in the
+  "On this page" index, so keep one h2 per section and use h3 inside it.
+-->
+<div class="sdd-report">
+
+<div class="head">
+  <h1>{{PROJECT}}</h1>
+  <!--GEN:generated-->
+  <span class="generated">not generated yet</span>
+  <!--/GEN:generated-->
+</div>
+
+<section class="cards">
+  <div class="card attention">
+    <h4>Waiting on you</h4>
+    <div class="value todo">Decisions, approvals or input only the owner can give, or "Nothing"</div>
+  </div>
+  <div class="card">
+    <h4>Play / try it</h4>
+    <div class="value todo">Link to the running build, or how to run it</div>
+  </div>
+  <div class="card">
+    <h4>Tests</h4>
+    <!--GEN:tests-->
+    <div class="value muted">generated</div>
+    <!--/GEN:tests-->
+  </div>
+  <div class="card">
+    <h4>In progress</h4>
+    <!--GEN:inprogress-->
+    <div class="value muted">generated</div>
+    <!--/GEN:inprogress-->
+  </div>
+</section>
+
+<h2>Where things stand</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Area</th><th>State</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td class="todo">Area</td><td><span class="pill queued">not started</span></td><td class="todo">One line on what works and what does not</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Current plan</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>#</th><th>Task</th><th>State</th><th>Evidence</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="todo">Task name</td><td><span class="pill queued">queued</span></td><td class="todo">Commit, test run or capture proving it</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Decisions I made for you (overrule any)</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Date</th><th>Decision</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap todo">YYYY-MM-DD</td><td class="todo">What was chosen on the owner's behalf</td><td class="todo">One line</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Known issues</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Issue</th><th>Reported</th><th>In the live build?</th></tr></thead>
+  <tbody>
+    <tr><td class="todo">What is wrong</td><td class="todo">Who noticed, when</td><td><span class="pill blocked">still there</span></td></tr>
+  </tbody>
+</table></div>
+
+<h2>Screenshots</h2>
+<p class="muted small">Captured from the real product, not mockups.</p>
+<div class="shots">
+  <figure>
+    <figcaption class="todo">No captures yet. Copy images into the content directory and link them as /files/&lt;name&gt;.</figcaption>
+  </figure>
+</div>
+
+<h2>Mockups</h2>
+<ul class="links">
+  <li class="todo">No mockups yet. Pages published beside this report appear in the Pages menu at the top.</li>
+</ul>
+
+<h2>Progress</h2>
+<!--GEN:plans-->
+<p class="muted">not generated yet</p>
+<!--/GEN:plans-->
+
+<h2>Latest commits</h2>
+<!--GEN:commits-->
+<p class="muted">not generated yet</p>
+<!--/GEN:commits-->
+</div>

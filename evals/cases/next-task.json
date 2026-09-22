@@ -1,0 +1,17 @@
+{
+  "name": "/sdd:next-task: finds the next incomplete task",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "/sdd:next-task",
+  "allowed_tools": ["Read", "Glob", "Grep", "Bash(git:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(find:*)", "Bash(grep:*)"],
+  "extract": "raw",
+  "graders": [
+    { "id": "names-the-incomplete-task", "must_match": "1\\.02",
+      "why": "1.01 is Complete and 1.02 is not; it must identify 1.02" },
+    { "id": "not-the-complete-one", "must_not_match": "(?i)next task is \\*?\\*?1\\.01",
+      "why": "picking a Complete task would make the command useless" },
+    { "id": "gives-the-path", "must_match": "\\.specs/docs/tasks/phase-1/1\\.02",
+      "why": "the caller needs the path to act on it" },
+    { "id": "did-not-invent-a-task", "must_not_match": "(?i)(created a new task|wrote a new task file)",
+      "why": "it may only create a task when none is incomplete; one is" }
+  ]
+}

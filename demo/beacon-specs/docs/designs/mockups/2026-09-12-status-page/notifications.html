@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notification transport and update wording</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<main>
+<p class="tag">Mockup, not the product</p>
+<h1>Notification transport and update wording</h1>
+<p class="lede">Phase 3 is blocked on the first group. The design record at
+<code>docs/designs/2026-09-14-notification-transport.md</code> has the full reasoning; this page is
+the short version with the tradeoffs attached, so it can be answered rather than re-read.</p>
+
+<h2>How do subscribers get told?</h2>
+<p class="why">The page is static and served from object storage precisely because our own
+infrastructure is what breaks. That decision is what makes this hard, and it is not being reopened
+to make this easier.</p>
+
+<section data-pick-group="notification-transport" data-pick-label="Notification transport">
+  <article data-pick-option="atom-feed">
+    <h3>An Atom feed beside the page</h3>
+    <p>Recommended. Free, static, no vendor, no personal data, about a day of work. Adds nothing
+      to the incident path. Most customers do not use a feed reader, so it answers the letter of
+      "subscribe without an account" and probably not its intent.</p>
+  </article>
+  <article data-pick-option="hosted-list">
+    <h3>A hosted email list</h3>
+    <p>What customers would actually use. Unsubscribe, bounces and deletion become a vendor's
+      problem rather than ours. Costs money per subscriber, and puts a third party with its own
+      status page inside the path we use to report outages.</p>
+  </article>
+  <article data-pick-option="webhooks">
+    <h3>Customer-hosted webhooks</h3>
+    <p>Registered by pull request to the incidents repo. No state of ours and it is what the
+      integration-minded customers want. Serves five customers, not five thousand, and retries
+      need somewhere to live, which is the server we do not have.</p>
+  </article>
+  <article data-pick-option="nothing-yet">
+    <h3>Nothing yet, cut the promise</h3>
+    <p>Drop the subscription criterion from the PRD until someone asks for it. Honest, free, and
+      leaves a written promise unkept, which is its own cost.</p>
+  </article>
+</section>
+
+<h2>How should an update read?</h2>
+<p class="why">The same outage, written three ways. This sets the house style for everyone
+on call, so it is worth one minute now.</p>
+
+<section data-pick-group="update-tone" data-pick-label="Update wording">
+  <article data-pick-option="plain">
+    <h3>Plain and specific</h3>
+    <p>"Traced to a connection pool exhausted by a slow downstream. Pool size raised."<br>
+      Says what happened. Assumes the reader can take it, and tells engineers at other companies
+      something useful.</p>
+  </article>
+  <article data-pick-option="impact-first">
+    <h3>Impact first, cause second</h3>
+    <p>"Checkout is slow for some customers in Europe. Cause identified, fix applied, watching."<br>
+      Leads with what the reader experiences. Kinder to a non-technical reader, vaguer to a
+      technical one.</p>
+  </article>
+  <article data-pick-option="formal">
+    <h3>Formal</h3>
+    <p>"We are aware of an issue affecting checkout performance and are actively working to
+      resolve it."<br>
+      What most status pages say. Safe, and says almost nothing; readers have learned to skip it.</p>
+  </article>
+</section>
+
+<footer>Mockup for phase 3, published 2026-09-12. Nothing here is built yet.</footer>
+</main>
+<script src="picks.js" defer></script>
+</body>
+</html>

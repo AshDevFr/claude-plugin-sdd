@@ -1,0 +1,43 @@
+{
+  "name": "/sdd:generate-specs: plans one spec per phase and asks first",
+  "fixture": "specrepo.sh",
+  "prompt": "/sdd:generate-specs",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)",
+    "Bash(wc:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "resolves-paths",
+      "must_match": "\\.specs/docs/(specs|PRD)",
+      "why": "it must resolve paths through the Task Workflow section before anything else"
+    },
+    {
+      "id": "one-spec-per-phase",
+      "must_match": "(?is)phase-1.{0,300}phase-2",
+      "why": "the PRD has two phases; it must plan one spec per phase"
+    },
+    {
+      "id": "asks-before-writing",
+      "must_match": "(?i)(confirm|shall I|should I|proceed\\?|let me know|awaiting|ready to|reply\\b|before I (write|create|generate)|say the word|tell me (which|whether|if)|would you (like|prefer)|answer (some|any|these|the)|\\bgo ahead\\b)",
+      "why": "the command requires confirmation before writing any files. Matches the act of asking, not a word list: a run that offered lettered options and said \"Reply 'go' and I'll write both specs\" failed a pattern wanting 'confirm' or 'shall I'"
+    },
+    {
+      "id": "did-not-write-yet",
+      "must_not_match": "(?i)(I have written|wrote .*phase-1.*\\.md|created the spec files)",
+      "why": "it must not write before confirmation"
+    },
+    {
+      "id": "no-superpowers-path",
+      "must_not_match": "docs/superpowers",
+      "why": "planning artefacts must land in the spec repo; that path is forbidden"
+    }
+  ]
+}

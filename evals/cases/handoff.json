@@ -1,0 +1,61 @@
+{
+  "name": "/sdd:handoff: captures what dies with the session, not what the files already hold",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "Some context from this session before you do anything: we decided to keep the incidents file as TOML rather than JSON, because it is hand-edited during an outage and JSON's quoting is hostile at 4am. I first tried parsing it with a regex and abandoned that, because nested tables broke it in a way that only showed up on multi-day incidents. The next step is wiring the real parser into the CLI.\n\nNow: /sdd:handoff I'm restarting the session",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)",
+    "Bash(mkdir:*)"
+  ],
+  "extract": "raw",
+  "artefact": ".specs/docs/handoffs/*.md",
+  "graders": [
+    {
+      "id": "keeps-the-abandoned-approach",
+      "must_match": "(?i)regex",
+      "why": "what was tried and abandoned is the most expensive thing to lose, because the next session tries it again. It exists only in the transcript, so a handoff that drops it has failed at its one job",
+      "source": "artefact",
+      "lint_ignore": "the phrase is in the prompt by construction: the session states what was tried and abandoned, and the whole assertion is that the handoff FILE carries it forward. Graded on the artefact, not the reply, so echoing the prompt back in conversation does not satisfy it. A pattern absent from the prompt would be testing whether the model invented something instead."
+    },
+    {
+      "id": "keeps-the-reason-for-the-decision",
+      "must_match": "(?i)(hand-edited|hand edited|4am|quoting)",
+      "why": "a decision recorded without its reason gets re-litigated, which is the same cost as not recording it. The reason is the part that lived only in conversation",
+      "lint_ignore": "same construction: the reason exists only because the session said it. This checks it reaches the written handoff rather than being dropped as chatter, which is the failure the command exists to prevent.",
+      "source": "artefact"
+    },
+    {
+      "id": "records-the-next-action",
+      "must_match": "(?i)next action",
+      "why": "the successor's first move is the one thing a handoff must make unambiguous. Without it the next session spends its opening turns deciding where to start, which is what the handoff was written to avoid",
+      "source": "artefact"
+    },
+    {
+      "id": "does-not-restate-task-statuses",
+      "must_not_match": "(?im)^\\s*\\*\\*Status:\\*\\*|\\b(not started|in progress)\\b.{0,30}\\b1\\.0[0-9]",
+      "why": "the spec repo already holds task statuses and a copy drifts from the moment it is written, which is the drift /sdd:converge exists to detect. Restating them to save one lookup creates a second source of truth that disagrees with the first",
+      "violating_example": "**Status:** Not Started",
+      "source": "artefact"
+    },
+    {
+      "id": "does-not-claim-unverified-completion",
+      "must_not_match": "(?i)(all tests pass|verification (has )?passed|task .{0,12}is complete)",
+      "why": "a handoff is an easy place to launder an unverified claim, because the successor has no way to check it. Nothing ran in this session, so any such claim is invented",
+      "violating_example": "The verification passed and task 1.02 is complete.",
+      "source": "artefact"
+    },
+    {
+      "id": "does-not-paste-the-document-as-the-prompt",
+      "must_not_match": "(?i)paste (the|this) (whole|entire|full) (document|handoff)",
+      "why": "the printed prompt points at the file. Pasting the document into a new session spends the context the handoff was written to save",
+      "violating_example": "Paste the whole document into your next session."
+    }
+  ]
+}

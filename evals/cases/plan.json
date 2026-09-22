@@ -1,0 +1,43 @@
+{
+  "name": "/sdd:plan: interrogates before planning, and targets the spec repo",
+  "fixture": "specrepo.sh",
+  "prompt": "/sdd:plan add rate limiting to the widgets endpoint",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "asks-before-writing",
+      "must_match": "(?i)(\\?|confirm|before I|which|how |what )",
+      "why": "the command is interactive by design; producing a plan without asking anything is the failure"
+    },
+    {
+      "id": "targets-the-spec-repo",
+      "must_match": "(?i)(\\.specs/docs/plans|\\.specs/)",
+      "why": "planning artefacts land in the spec repo, never the main one"
+    },
+    {
+      "id": "no-superpowers-path",
+      "must_not_match": "(?i)(writing|wrote|created|save).{0,40}docs/superpowers",
+      "why": "that path is forbidden as a target"
+    },
+    {
+      "id": "did-not-write-unasked",
+      "must_not_match": "(?i)(I have written the plan|plan written to)",
+      "why": "it must gather requirements before writing"
+    },
+    {
+      "id": "no-boilerplate-question-bank",
+      "must_not_match": "(?i)(who are the stakeholders|what.{0,5}s the (estimated )?timeline|rollback strategy|priority level|expected complexity level)",
+      "why": "Part 1 used to carry a fixed question bank: stakeholders, timeline, priority, rollback, complexity. Every one of those has an answer for any project, which is why they were worthless, and five of them spend the question budget before reaching what this request actually left open. They came out; this stops them coming back in a rewrite",
+      "violating_example": "A few questions before I plan: who are the stakeholders, and what's the timeline?"
+    }
+  ]
+}

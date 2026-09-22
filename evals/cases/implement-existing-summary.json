@@ -1,0 +1,39 @@
+{
+  "name": "/sdd:implement: updates the plan's existing Progress Summary instead of adding one",
+  "fixture": "plan-with-summary.sh",
+  "prompt": "/sdd:implement .specs/docs/plans/2026-09-12-audit-trail.md \"Phase 1 - Append-only log\"\n\nStop after marking the section active and appending a log entry saying work has started. Do not write any source code and do not commit.",
+  "allowed_tools": [
+    "Read",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(grep:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)"
+  ],
+  "artefact": ".specs/docs/plans/2026-09-12-audit-trail.md",
+  "graders": [
+    {
+      "id": "one-summary-table",
+      "must_not_match": "(?s)## Progress Summary.*## Progress Summary",
+      "why": "the plan already has a table after Quick Links; a second one means one of them silently goes stale"
+    },
+    {
+      "id": "row-marked-active",
+      "must_match": "(?m)^\\|\\s*Phase 1\\s*\\|\\s*🟡",
+      "why": "the existing Phase 1 row is the one to update, matched by number rather than by the full section title"
+    },
+    {
+      "id": "log-not-renamed",
+      "must_match": "## Progress Tracking",
+      "why": "plans call the log Progress Tracking; renaming it to the task files' Progress Notes breaks the plan template's contract",
+      "lint_ignore": "the heading is present before the run by design: this grader checks it survives, so a pre-run match is the precondition rather than vacuity"
+    },
+    {
+      "id": "no-second-log",
+      "must_not_match": "## Progress Notes",
+      "why": "appending to a new Progress Notes section beside the existing log splits the history in two"
+    }
+  ]
+}

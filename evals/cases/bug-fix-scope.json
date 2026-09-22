@@ -1,0 +1,43 @@
+{
+  "name": "/sdd:bug fix: an expansion beyond the assessed files is recorded, not silent",
+  "fixture": "bug-scope-expands.sh",
+  "prompt": "/sdd:bug fix discount-zero",
+  "artefact": ".specs/docs/bugs/2026-09-16-discount-zero/fix.md",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)",
+    "Bash(python3:*)"
+  ],
+  "graders": [
+    {
+      "id": "records-the-deviation",
+      "must_match": "(?is)##\\s*Deviations from Assessment.{0,600}cart\\.py",
+      "why": "the reproduction runs through app/cart.py, which the assessment did not list, so the fix cannot stay in scope. Expanding is correct; expanding without saying so leaves the assessment describing a change that no longer matches the diff"
+    },
+    {
+      "id": "names-what-forced-it",
+      "must_match": "(?is)##\\s*Deviations from Assessment.{0,800}(reproduc|cart_total|line_total|second copy|duplicat|same expression)",
+      "why": "a deviation entry that names the file but not the evidence is a list, not a record. The next reader needs to know why the scope moved, not only that it did"
+    },
+    {
+      "id": "actually-fixed-both",
+      "source": "reply",
+      "must_match": "(?is)cart\\.py",
+      "why": "a run that records a deviation it did not make is worse than one that made an unrecorded change. The reply has to show cart.py was actually touched"
+    },
+    {
+      "id": "did-not-commit-the-source",
+      "source": "reply",
+      "must_not_match": "(?i)git (add|commit)[^\\n]{0,60}(app/|src/|tests/)|committed the (fix|source|code) (to|in) the main repo",
+      "why": "the spec repo is committed in the same turn; the source change stays uncommitted for the user, as everywhere else in this suite",
+      "violating_example": "git add app/cart.py && git commit -m 'fix discount'"
+    }
+  ]
+}

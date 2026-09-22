@@ -1,0 +1,36 @@
+{
+  "name": "/sdd:pr-msg: writes a PR title and body from a plan",
+  "fixture": "withplan.sh",
+  "prompt": "/sdd:pr-msg .specs/docs/plans/2026-09-01-audit-trail.md",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "has-a-title",
+      "must_match": "(?i)(title|^#)",
+      "why": "a PR message without a title is not a PR message"
+    },
+    {
+      "id": "describes-the-change",
+      "must_match": "(?i)widget",
+      "why": "the plan is about widget reads and the prompt only names the file 'audit-trail', so this shows the plan was read rather than its filename guessed from"
+    },
+    {
+      "id": "no-attribution",
+      "must_not_match": "(?im)^\\s*(co-authored-by|generated with|🤖)",
+      "why": "the rules forbid an attribution trailer or footer in a PR body"
+    },
+    {
+      "id": "no-plan-path",
+      "must_not_match": "(?i)\\.specs/docs/plans/",
+      "why": "the plan lives in a gitignored spec repo, so naming its path is a dead pointer for a reviewer"
+    }
+  ]
+}

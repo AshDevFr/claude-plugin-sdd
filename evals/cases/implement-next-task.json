@@ -1,0 +1,33 @@
+{
+  "name": "/sdd:implement-next-task: picks the incomplete task and starts on it",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "/sdd:implement-next-task\n\nStop after identifying the task and reviewing it. Report which task you selected and why, and do not write any source code yet.",
+  "allowed_tools": [
+    "Read",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "selected-the-incomplete-one",
+      "must_match": "1\\.02",
+      "why": "1.01 is Complete; selecting it would make the command useless"
+    },
+    {
+      "id": "explains-the-choice",
+      "must_match": "(?i)(not started|incomplete)",
+      "why": "it must say why the one it picked was the next one; 'next' is in the prompt"
+    },
+    {
+      "id": "did-not-invent-a-task",
+      "must_not_match": "(?i)(created a new task file|drafted a new task)",
+      "why": "it may only create a task when none is incomplete, and one is"
+    }
+  ]
+}

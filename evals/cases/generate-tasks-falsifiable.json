@@ -1,0 +1,34 @@
+{
+  "name": "/sdd:generate-tasks: refuses a verification that cannot fail",
+  "fixture": "specrepo-echo-ok.sh",
+  "prompt": "/sdd:generate-tasks .specs/docs/specs/phase-1_widgets.md\n\nGo ahead and write the task files.",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)"
+  ],
+  "graders": [
+    {
+      "id": "did-not-copy-echo-ok",
+      "must_not_match": "(?im)^\\*\\*Verification:\\*\\*\\s*`\\s*echo ok\\s*`",
+      "why": "the spec proposes `echo ok`, which passes whether or not the work was done; copying it into the task file produces a gate that can never fire",
+      "violating_example": "**Verification:** `echo ok`"
+    },
+    {
+      "id": "says-why-it-refused",
+      "must_match": "(?i)(pass(es|ed)?[^.\\n]{0,40}(even if|even when|whether|regardless|without)|cannot fail|can never fail|always pass(es)?|did ?n.?t use the spec.{0,3}s suggested|would pass anyway)",
+      "why": "silently substituting a better command teaches nobody; it has to say the suggestion was rejected and why. Phrasing varies a lot, so this matches the idea rather than a form of words: an earlier attempt demanded 'cannot fail' and missed 'passes even if nothing was built'"
+    },
+    {
+      "id": "proposed-something-runnable",
+      "must_match": "(?i)(run-tests|unittest|pytest|curl|python3)",
+      "why": "the replacement has to be a command that exists in the repo, not a different placeholder"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Create a git worktree, optionally giving it access to the nested spec repo.
+#
+# Why this exists: .specs is covered by a global gitignore, so `git worktree add` never
+# carries it. A worktree contains .git, the tracked files, and no .specs at all, which means
+# an agent dispatched there cannot read a brief that lives in it. The failure is quiet: the
+# directory is simply absent and the agent improvises.
+#
+# Needs bash and git. Nothing else.
+set -uo pipefail
+
+usage() {
+  cat <<'USAGE'
+sdd-worktree <branch> [path] [--specs=none|link|worktree]
+
+Creates a git worktree for <branch>. Default path is a sibling directory named
+<repo>-<branch>.
+
+  --specs=none       (default) No .specs in the worktree. The parent session owns every
+                     spec write and passes briefs inline.
+                     SAFE for concurrent agents: nothing is shared.
+
+  --specs=link       Symlinks the main repo's .specs into the worktree. One tree, one copy,
+                     visible to both.
+                     NOT SAFE for concurrent writers: two agents writing race each other.
+                     NOT READABLE by an agent unless the session is launched with
+                     --add-dir <main-repo>/.specs: the permission check resolves the symlink
+                     and refuses the target for being outside the worktree. Prefer
+                     --specs=worktree for an agent that must read its brief.
+
+  --specs=worktree   Adds a worktree of the nested .specs repo on its own branch, so the
+                     spec tree is independent.
+                     SAFE for concurrent writers. Needs a merge back afterwards, which this
+                     script does not do for you.
+
+Exits non-zero without creating anything if the request cannot be satisfied.
+USAGE
+}
+
+die() { printf 'sdd-worktree: %s\n' "$1" >&2; exit 1; }
+
+branch=""; path=""; mode="none"
+for arg in "$@"; do
+  case "$arg" in
+    --specs=*) mode="${arg#--specs=}" ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option: $arg" ;;
+    *) if [ -z "$branch" ]; then branch="$arg"; elif [ -z "$path" ]; then path="$arg"; else die "unexpected argument: $arg"; fi ;;
+  esac
+done
+
+[ -n "$branch" ] || { usage >&2; exit 1; }
+case "$mode" in none|link|worktree) ;; *) die "--specs must be none, link or worktree (got '$mode')" ;; esac
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
+repo=$(basename "$root")
+[ -n "$path" ] || path="$(dirname "$root")/${repo}-${branch//\//-}"
+
+# Refuse an existing target rather than writing into it. A previous run's leftover
+# directory is how `mv`-style operations end up nesting and corrupting what they meant to
+# protect, which this project has already been bitten by once.
+[ -e "$path" ] && die "target already exists: $path"
+
+spec="$root/.specs"
+if [ "$mode" != none ]; then
+  [ -d "$spec" ] || die "--specs=$mode needs a spec repo, and $spec does not exist"
+  [ -e "$spec/.git" ] || die "--specs=$mode needs $spec to be a git repository, and it is not"
+fi
+
+# If anything below fails, take the worktree back out. A half-created worktree with no
+# .specs looks exactly like a successful --specs=none run, which is the worst outcome here.
+created=""
+cleanup() {
+  [ -n "$created" ] || return 0
+  git -C "$root" worktree remove --force "$created" >/dev/null 2>&1 || rm -rf "$created"
+  git -C "$root" worktree prune >/dev/null 2>&1 || true
+}
+trap 'cleanup' EXIT
+
+if git -C "$root" show-ref --verify --quiet "refs/heads/$branch"; then
+  git -C "$root" worktree add "$path" "$branch" >/dev/null || die "could not create the worktree"
+else
+  git -C "$root" worktree add "$path" -b "$branch" >/dev/null || die "could not create the worktree"
+fi
+created="$path"
+
+spec_branch=""
+case "$mode" in
+  link)
+    # Absolute, so the link resolves from any working directory.
+    abs_spec=$(cd "$spec" && pwd -P) || die "could not resolve $spec"
+    ln -s "$abs_spec" "$path/.specs" || die "could not create the symlink"
+    # The Stop hook tests -e on .specs/.git. A link that does not satisfy that is worse than
+    # no link: the guard stays silent and spec writes go somewhere nobody looks.
+    [ -e "$path/.specs/.git" ] || die "the symlink does not resolve to a spec repo; refusing to leave it"
+    ;;
+  worktree)
+    spec_branch="${branch//\//-}-specs"
+    git -C "$spec" worktree add "$path/.specs" -b "$spec_branch" >/dev/null 2>&1 \
+      || git -C "$spec" worktree add "$path/.specs" "$spec_branch" >/dev/null 2>&1 \
+      || die "could not create the spec worktree"
+    [ -e "$path/.specs/.git" ] || die "the spec worktree has no .git; refusing to leave it"
+    ;;
+esac
+
+trap - EXIT
+created=""
+
+printf 'worktree   %s\n' "$path"
+printf 'branch     %s\n' "$branch"
+case "$mode" in
+  none)
+    printf 'specs      none. The parent session owns every spec write.\n' ;;
+  link)
+    printf 'specs      linked to %s\n' "$abs_spec"
+    printf '           Shared tree: do NOT run two writers against it concurrently.\n'
+    # A session is confined to its working directory and the permission check resolves the
+    # symlink first, so an agent is refused on the target path. Without this flag the mode
+    # silently fails at the only thing it is for.
+    printf '           An agent cannot read through the link unless you launch it with:\n'
+    printf '             claude --add-dir %s\n' "$abs_spec" ;;
+  worktree)
+    printf 'specs      worktree on branch %s\n' "$spec_branch"
+    printf '           Independent tree. Safe for concurrent writers; merge it back yourself.\n' ;;
+esac

@@ -1,0 +1,35 @@
+{
+  "name": "/sdd:generate-tasks: numbers criteria and says which spec criterion they cover",
+  "fixture": "specrepo-numbered-spec.sh",
+  "prompt": "/sdd:generate-tasks .specs/docs/specs/phase-1_widget-list.md\n\nGo ahead and write the task file, to .specs/docs/tasks/phase-1/1.01-list-widgets-endpoint.md exactly.",
+  "artefact": ".specs/docs/tasks/phase-1/1.01-list-widgets-endpoint.md",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)"
+  ],
+  "graders": [
+    {
+      "id": "numbers-the-criteria",
+      "must_match": "(?im)^\\s*[-*]\\s*\\[[ x]\\]\\s*\\*\\*AC1:?\\*\\*",
+      "why": "an unnumbered criterion cannot be cited by converge or analyze, and the numbering is the whole of what this phase added to the generator"
+    },
+    {
+      "id": "says-what-it-covers",
+      "must_match": "(?i)covers\\s+SC-0[12]",
+      "why": "coverage is declared, never inferred. Without the annotation the spec criterion reads as covered by nothing, however obviously the task delivers it"
+    },
+    {
+      "id": "did-not-invent-a-criterion-number",
+      "must_not_match": "(?i)covers\\s+SC-(?!0[12])\\d+",
+      "why": "the spec numbers SC-01 and SC-02 only. A reference to any other number is a dangling pointer that analyze will report, and it is the failure mode of filling in an annotation to look thorough",
+      "violating_example": "- [ ] **AC1:** the list renders (covers SC-07)"
+    }
+  ]
+}

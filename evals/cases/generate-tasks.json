@@ -1,0 +1,17 @@
+{
+  "name": "/sdd:generate-tasks: plans one task file per work item and asks first",
+  "fixture": "specrepo-withspec.sh",
+  "prompt": "/sdd:generate-tasks .specs/docs/specs/phase-1_http-surface.md",
+  "allowed_tools": ["Read", "Glob", "Grep", "Bash(git:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(find:*)", "Bash(wc:*)"],
+  "extract": "raw",
+  "graders": [
+    { "id": "uses-the-pattern", "must_match": "1\\.0[12]",
+      "why": "it must number task files per the configured N.NN pattern" },
+    { "id": "one-per-work-item", "must_match": "(?is)health.{0,400}(list|widgets)",
+      "why": "the spec has two work items; it must plan one task file for each" },
+    { "id": "asks-before-writing", "must_match": "(?i)(confirm|shall I|should I|proceed\\?|let me know|ready to)",
+      "why": "the command requires confirmation before generating any files" },
+    { "id": "targets-the-tasks-dir", "must_match": "\\.specs/docs/tasks/phase-1",
+      "why": "task files must land in the configured tasks directory" }
+  ]
+}

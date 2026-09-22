@@ -1,0 +1,28 @@
+{
+  "name": "commit-msg: test-only change",
+  "fixture": "tests-only.sh",
+  "prompt": "/sdd:commit-msg",
+  "allowed_tools": [
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git status:*)"
+  ],
+  "graders": [
+    {
+      "id": "conventional-subject",
+      "must_match": "(feat|fix|docs|refactor|test|chore|perf|style|build|ci)(\\([^)]+\\))?!?: .+",
+      "why": "its rules require a conventional-commit subject"
+    },
+    {
+      "id": "no-counts",
+      "must_not_match": "(?i)\\b(one|two|three|four|five|six|[0-9]+)\\s+(new\\s+)?(tests?|files?|lines?|functions?|endpoints?)\\b",
+      "why": "a test-only diff is where a test count slips out; its rules forbid them"
+    },
+    {
+      "id": "no-attribution",
+      "must_not_match": "(?im)^\\s*(co-authored-by|generated with|\ud83e\udd16)",
+      "why": "its rules forbid an attribution trailer; anchored to a line start so a prose mention of the rule is not a violation"
+    }
+  ],
+  "extract": "fenced"
+}

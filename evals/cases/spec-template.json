@@ -1,0 +1,43 @@
+{
+  "name": "sdd:spec-template: the generated spec keeps its structure",
+  "fixture": "specrepo.sh",
+  "prompt": "Invoke the sdd:spec-template skill, then write a phase spec for Phase 1 of the PRD in this repo to .specs/docs/specs/phase-1_http-surface.md. Follow the template. Write the file and stop; you do not need to print it.",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(cat:*)",
+    "Bash(ls:*)",
+    "Bash(mkdir:*)"
+  ],
+  "graders": [
+    {
+      "id": "status-header",
+      "must_match": "(?im)^\\*\\*Status:\\*\\*",
+      "why": "the status header is what makes a document readable cold; the atlas rates it above every surveyed alternative"
+    },
+    {
+      "id": "tasks-summary-table",
+      "must_match": "(?is)Tasks Summary.{0,400}\\|\\s*Task\\s*\\|",
+      "why": "the Tasks Summary table is a required structure, not decoration"
+    },
+    {
+      "id": "progress-tracking",
+      "must_match": "(?i)## Progress Tracking",
+      "why": "a dated progress log is the thing that tells a human where work stands weeks later"
+    },
+    {
+      "id": "per-task-sections",
+      "must_match": "(?i)### Task 1\\.",
+      "why": "the spec must carry per-task detail for task generation to expand later"
+    },
+    {
+      "id": "acceptance-criteria",
+      "must_match": "(?i)Acceptance Criteria",
+      "why": "a spec without acceptance criteria cannot be verified"
+    }
+  ],
+  "artefact": ".specs/docs/specs/phase-1_http-surface.md"
+}

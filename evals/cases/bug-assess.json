@@ -1,0 +1,48 @@
+{
+  "name": "/sdd:bug assess: diagnoses with evidence and edits no source",
+  "fixture": "bug-reproducible.sh",
+  "prompt": "/sdd:bug assess discount-zero-division A customer applied a 100% off coupon and the checkout page returned a 500. See REPORT.md.",
+  "artefact": ".specs/docs/bugs/*-discount-zero-division/assessment.md",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)",
+    "Bash(python3:*)"
+  ],
+  "graders": [
+    {
+      "id": "names-the-file-and-the-cause",
+      "must_match": "(?is)pricing\\.py.{0,600}(divid|division|zero)|((divid|division|zero).{0,600}pricing\\.py)",
+      "why": "a root cause has to name the code that produces the symptom. 'Probably the discount logic' is the failure this stage exists to prevent, and it is indistinguishable from a real diagnosis unless the file is named"
+    },
+    {
+      "id": "records-a-runnable-reproduction",
+      "must_match": "(?im)^\\*\\*Reproduction:\\*\\*\\s*`[^`]+`",
+      "why": "the test stage reads this field and runs what it finds. A prose reproduction cannot be run, so the verdict would rest on nothing"
+    },
+    {
+      "id": "records-a-verification-command",
+      "must_match": "(?im)^\\*\\*Verification:\\*\\*\\s*`[^`]+`",
+      "why": "the fix has to be provable later. Without this the test stage has only the reproduction, which shows the bug and not its absence"
+    },
+    {
+      "id": "did-not-fix-it",
+      "must_not_match": "(?is)(100\\s*/\\s*remaining|remaining\\s*/\\s*100)[^\\n]{0,80}(fixed|corrected|changed to)|##\\s*What changed",
+      "why": "assess edits no source and writes no fix report. A stage that diagnoses and repairs in one pass is exactly what the three-stage split exists to prevent, because the diagnosis then describes whatever worked",
+      "violating_example": "## What changed\n- `app/pricing.py` - corrected to remaining / 100"
+    },
+    {
+      "id": "reports-the-source-untouched",
+      "source": "reply",
+      "must_not_match": "(?i)(I (have )?(fixed|corrected|patched|repaired) (it|the bug)|the fix is (now )?(in place|applied))",
+      "why": "the reply must not claim a repair this stage is forbidden to make. A run that edits nothing but says it fixed the bug is the same failure as far as the reader is concerned",
+      "violating_example": "I fixed the bug in app/pricing.py."
+    }
+  ]
+}

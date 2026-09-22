@@ -1,0 +1,38 @@
+{
+  "name": "/sdd:implement: runs the Verification command before marking Complete",
+  "fixture": "specrepo-implementable.sh",
+  "prompt": "/sdd:implement .specs/docs/tasks/phase-1/1.02-list-widgets.md",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)",
+    "Bash(chmod:*)",
+    "Bash(python3:*)",
+    "Bash(./run-tests)"
+  ],
+  "artefact": ".specs/docs/tasks/phase-1/1.02-list-widgets.md",
+  "graders": [
+    {
+      "id": "marked-complete",
+      "must_match": "(?im)^\\*\\*Status:\\*\\*.*(Complete|✅|🟢)",
+      "why": "the task is fully specified and its tests are already written, so there is nothing to stop and ask about"
+    },
+    {
+      "id": "records-what-the-command-printed",
+      "must_match": "Ran \\d+ tests?",
+      "why": "unittest's own output is the one thing in the log a run that skipped the command could not have written; the command name is already in the file's Verification field"
+    },
+    {
+      "id": "no-bare-success-claim",
+      "must_not_match": "(?i)all tests passing, build clean",
+      "why": "the template line it replaces: a claim standing in for the evidence",
+      "violating_example": "- All acceptance criteria met\n- All tests passing, build clean"
+    }
+  ]
+}

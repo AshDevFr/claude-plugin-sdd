@@ -1,0 +1,4 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_01GRqGELNfEp8bzfQ2fdK5qy","name":"Bash","input":{"command":"echo SDD-SUBAGENT-TRANSCRIPT-PROBE-7f3a","description":"Echo probe string"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_01GRqGELNfEp8bzfQ2fdK5qy","is_error":false}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_01BVD4xiD91qY75g4qpTAwop","name":"SubagentHandback","input":{"message":"SDD-SUBAGENT-TRANSCRIPT-PROBE-7f3a"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_01BVD4xiD91qY75g4qpTAwop","is_error":null}]}}

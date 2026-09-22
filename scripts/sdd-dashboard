@@ -1,0 +1,805 @@
+#!/usr/bin/env python3
+"""Serve a project's dashboard on the LAN, detached from the session that started it.
+
+    sdd-dashboard start [--port N] [--host ADDR] [--url-host NAME] [--no-key | --key]
+                        [--keep-running | --stop-with-session] [--idle-hours H]
+    sdd-dashboard stop [--if-session-bound] | status | url | path
+
+The design follows the Superpowers brainstorming companion (MIT, Copyright (c) 2025 Jesse
+Vincent): a content directory of HTML fragments wrapped in a frame, assets under /files/, and a
+page that reloads when content changes. It is a reimplementation, not a copy, and it differs
+where using that companion as a dashboard went wrong:
+
+  - `/` is always report.html. Serving the newest file hid the report whenever a mockup was
+    published, until something touched the report again. Other pages live at /view/<name>.
+  - It is not tied to the shell that started it. The process is detached with its own session id,
+    and the port and key are persisted so a restart, even after a reboot, hands out the same URL.
+    It stops when a Claude session in the project exits, because a server nobody remembers
+    starting is the likelier mistake; --keep-running lets it outlive the session for an owner
+    reading later. Either way it stops after 12 hours with no reader and no change (--idle-hours).
+  - It binds every interface by default, because the owner reads from another machine and cannot
+    open a local file.
+  - Reload is a long poll on /__changed, not a WebSocket, which keeps it to the standard library.
+
+Standard library only.
+"""
+
+import argparse
+import html
+import json
+import os
+import re
+import secrets
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+from http import cookies
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, HERE)
+import sdd_dashboard as common  # noqa: E402
+
+ME = "sdd-dashboard"
+FRAME = os.path.join(HERE, "dashboard-frame.html")
+REPORT = "report.html"
+LONG_POLL_SECONDS = 25
+
+MIME = {
+    ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript",
+    ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".avif": "image/avif",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8",
+    ".md": "text/plain; charset=utf-8",
+}
+
+# Polls for a change and reloads. The signature is embedded at render time, so an edit landing
+# between the page being served and the first poll still triggers a reload. Scroll position is
+# kept across reloads, because a dashboard that jumps to the top on every commit is unreadable.
+HELPER_JS = r"""
+(function () {
+  var sig = window.__SDD_SIG__, delay = 1000, pill = document.querySelector('.frame-live');
+  // The long poll answers only on a change or after its timeout, so a quick check with wait=0
+  // runs first, and after every failure, to show the connection state without that delay.
+  var quick = true;
+  var KEY = 'sdd-dashboard-scroll:' + location.pathname;
+  try {
+    var y = sessionStorage.getItem(KEY);
+    if (y !== null) { sessionStorage.removeItem(KEY); window.scrollTo(0, parseInt(y, 10) || 0); }
+  } catch (e) {}
+  function set(state, text) { if (pill) { pill.setAttribute('data-state', state); pill.textContent = text; } }
+  function reload() {
+    try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+    location.reload();
+  }
+  function poll() {
+    var url = '/__changed?since=' + encodeURIComponent(sig) + (quick ? '&wait=0' : '');
+    fetch(url, { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) {
+        if (r.status === 403) { set('locked', 'key needed'); throw new Error('locked'); }
+        return r.json();
+      })
+      .then(function (d) {
+        set('live', 'live'); delay = 1000; quick = false;
+        if (d.changed) { reload(); return; }
+        sig = d.sig; poll();
+      })
+      .catch(function () {
+        set('offline', 'reconnecting'); quick = true;
+        setTimeout(poll, delay); delay = Math.min(delay * 2, 30000);
+      });
+  }
+  poll();
+})();
+"""
+
+# A page that is its own document keeps its own head and styles, which is what lets a mockup
+# render identically from a spec repo clone with no server. The cost is that it gets none of the
+# frame, including any way back, so this much is injected instead: a link home and the same page
+# list, in its own namespace and with no dependency on the frame's stylesheet or its variables.
+# Top right because picks.js owns the bottom and a page's own header is usually top left.
+STANDALONE_NAV = """
+<style>
+.sdd-nav{position:fixed;top:0;right:0;z-index:2147483000;margin:.6rem;display:flex;gap:.4rem;
+align-items:flex-start;font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.sdd-nav a,.sdd-nav summary{display:block;padding:.35em .8em;border-radius:999px;cursor:pointer;
+background:rgba(20,21,23,.92);color:#e9e6e1;border:1px solid #3d4045;text-decoration:none;
+white-space:nowrap}
+@media(prefers-color-scheme:light){.sdd-nav a,.sdd-nav summary{background:rgba(255,255,255,.95);
+color:#1f2022;border-color:#d7d3cc}}
+.sdd-nav a:hover,.sdd-nav summary:hover{border-color:#f07a3a}
+.sdd-nav details{position:relative}
+.sdd-nav summary{list-style:none}
+.sdd-nav summary::-webkit-details-marker{display:none}
+.sdd-nav-panel{position:absolute;top:calc(100%% + .35rem);right:0;min-width:15rem;max-width:80vw;
+max-height:70vh;overflow:auto;padding:.3rem;border-radius:8px;
+background:rgba(20,21,23,.98);border:1px solid #3d4045}
+@media(prefers-color-scheme:light){.sdd-nav-panel{background:#fff;border-color:#d7d3cc}}
+.sdd-nav-panel a{border:none;background:none;border-radius:6px;padding:.4em .6em;
+white-space:normal}
+.sdd-nav-panel a:hover{background:rgba(240,122,58,.14)}
+.sdd-nav-panel a[aria-current=page]{color:#f07a3a;font-weight:650}
+@media print{.sdd-nav{display:none}}
+</style>
+<nav class="sdd-nav" aria-label="Dashboard">
+<a href="/">&#8592; Dashboard</a>
+<details><summary>Pages</summary><div class="sdd-nav-panel">%s</div></details>
+</nav>
+"""
+
+
+def standalone_nav(content, current):
+    """The injected bar's page list: the report, then every other page newest first."""
+    names, mtimes = pages(content)
+    links = ['<a href="/">Dashboard</a>']
+    for n in names:
+        cur = ' aria-current="page"' if n == current else ""
+        links.append(f'<a href="/view/{urllib.parse.quote(n)}"{cur}>{html.escape(page_label(n))}</a>')
+    return STANDALONE_NAV % "".join(links)
+
+
+FORBIDDEN = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>Key required</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{background:#141517;color:#e9e6e1;font:16px/1.5 system-ui,sans-serif;padding:2rem;max-width:640px;margin:auto}
+code{color:#f07a3a}@media(prefers-color-scheme:light){body{background:#f3f2ef;color:#1f2022}code{color:#c0501a}}</style>
+</head><body><h1>Key required</h1><p>Open the full dashboard URL, including the <code>?key=</code> part.
+Ask the agent for it with <code>/sdd:dashboard url</code>. The browser remembers the key after that.</p></body></html>"""
+
+
+# ---- content -------------------------------------------------------------------------------------
+def safe_path(content, rel):
+    """A regular file inside the content directory, or None.
+
+    Dot-segments are refused outright so hidden files and temporary writes are never served, and
+    the real path must stay inside the real content directory, which also refuses a symlink out.
+    """
+    parts = [p for p in rel.split("/") if p]
+    if not parts or any(p.startswith(".") for p in parts):
+        return None
+    path = os.path.join(content, *parts)
+    real_root = os.path.realpath(content)
+    real = os.path.realpath(path)
+    if not real.startswith(real_root + os.sep) or not os.path.isfile(real):
+        return None
+    return real
+
+
+def signature(content):
+    """Changes whenever anything under the content directory is added, removed or rewritten."""
+    newest, count = 0, 0
+    stack = [content]
+    while stack:
+        d = stack.pop()
+        try:
+            newest = max(newest, os.stat(d).st_mtime_ns)
+            with os.scandir(d) as it:
+                for e in it:
+                    if e.name.startswith("."):
+                        continue
+                    count += 1
+                    st = e.stat(follow_symlinks=False)
+                    newest = max(newest, st.st_mtime_ns)
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append(e.path)
+        except OSError:
+            continue
+    return f"{newest}-{count}"
+
+
+def pages(content):
+    """HTML pages other than the report, newest first.
+
+    One directory deep as well as the top level, so a mockup set copied in as its own folder is
+    listed without flattening it.
+    """
+    out = []
+
+    def scan(d, prefix, depth):
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    if e.name.startswith("."):
+                        continue
+                    rel = prefix + e.name
+                    if e.is_dir(follow_symlinks=False) and depth == 0:
+                        scan(e.path, rel + "/", 1)
+                    elif e.name.endswith(".html") and rel != REPORT and e.is_file():
+                        out.append((e.stat().st_mtime, rel))
+        except OSError:
+            pass
+
+    scan(content, "", 0)
+    return [name for _, name in sorted(out, reverse=True)], dict((n, m) for m, n in out)
+
+
+def is_full_document(text):
+    head = text.lstrip()[:20].lower()
+    return head.startswith("<!doctype") or head.startswith("<html")
+
+
+def page_label(name):
+    return name[:-5].removesuffix("/index")
+
+
+def nav(names, mtimes, current):
+    """The pages menu: the report first, then pages newest first, a folder's pages kept together.
+
+    A folder is a mockup set, so its pages sit under one heading placed where its newest page
+    would be. A folder holding a single page is listed as that page, since a heading over one
+    link only adds a line.
+    """
+    def link(n, text):
+        stamp = time.strftime("%m-%d %H:%M", time.localtime(mtimes[n]))
+        cur = ' class="current"' if n == current else ""
+        return (f'<a href="/view/{urllib.parse.quote(n)}"{cur}><span>{html.escape(text)}</span>'
+                f"<time>{stamp}</time></a>")
+
+    groups = {}
+    for n in names:
+        groups.setdefault(n.split("/", 1)[0] if "/" in n else n, []).append(n)
+    cur = ' class="current"' if current == REPORT else ""
+    out = [f'<a href="/"{cur}><span>Dashboard</span></a>']
+    for key, members in groups.items():
+        if len(members) == 1:
+            out.append(link(members[0], page_label(members[0])))
+            continue
+        m = re.match(r"(\d{4}-\d{2}-\d{2})-(.+)$", key)
+        head = (f"{html.escape(m.group(2))}<span>{m.group(1)}</span>" if m else html.escape(key))
+        items = "".join(link(n, n.split("/", 1)[1][:-5]) for n in members)
+        out.append(f'<div class="frame-menu-group"><div class="frame-menu-group-name">{head}</div>{items}</div>')
+    return "".join(out)
+
+
+def render(content, name, title):
+    path = os.path.join(content, name)
+    sig = signature(content)
+    helper = f"<script>window.__SDD_SIG__={json.dumps(sig)};</script>\n<script>{HELPER_JS}</script>"
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            body = f.read()
+    except OSError:
+        body = None
+
+    if body is not None and is_full_document(body):
+        extra = standalone_nav(content, name) + helper
+        i = body.lower().rfind("</body>")
+        return body[:i] + extra + body[i:] if i >= 0 else body + extra
+
+    if body is None:
+        body = ('<div class="frame-empty"><h1>No report yet</h1><p>Run <code>/sdd:dashboard</code> in the '
+                "project to scaffold one. This page reloads by itself when it appears.</p></div>")
+
+    names, mtimes = pages(content)
+    with open(FRAME, encoding="utf-8") as f:
+        frame = f.read()
+    frame = frame.replace("<!-- TITLE -->", html.escape(title))
+    frame = frame.replace("<!-- CURRENT -->", html.escape("Dashboard" if name == REPORT else page_label(name)))
+    frame = frame.replace("<!-- COUNT -->", str(len(names) + 1))
+    frame = frame.replace("<!-- NAV -->", nav(names, mtimes, name))
+    frame = frame.replace("<!-- HELPER -->", helper)
+    return frame.replace("<!-- CONTENT -->", body, 1)
+
+
+# ---- server ----------------------------------------------------------------------------------------
+def make_handler(content, key, title, instance, port, activity):
+    cookie_name = f"sdd-dashboard-{port}"
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "sdd-dashboard"
+        sys_version = ""
+
+        def log_request(self, code="-", size="-"):
+            # Only failures: the long poll alone would write thousands of lines a day per open tab.
+            if isinstance(code, int) and code >= 400:
+                super().log_request(code, size)
+
+        def send(self, code, body, ctype="text/html; charset=utf-8", extra=None):
+            data = body if isinstance(body, bytes) else body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(data)
+
+        def send_file(self, real):
+            if real is None:
+                return self.send(404, "Not found", "text/plain; charset=utf-8")
+            with open(real, "rb") as f:
+                data = f.read()
+            return self.send(200, data, MIME.get(os.path.splitext(real)[1].lower(), "application/octet-stream"))
+
+        def authorized(self, query):
+            """True to serve, False once a response has already been sent."""
+            if key is None:
+                return True
+            given = query.get("key", [None])[0]
+            if given is not None:
+                if secrets.compare_digest(given, key):
+                    # Trade the query key for a cookie and drop it from the address bar, so plain
+                    # links inside the page, /files/ images included, work without carrying it.
+                    rest = {k: v for k, v in query.items() if k != "key"}
+                    loc = urllib.parse.urlsplit(self.path).path + (
+                        "?" + urllib.parse.urlencode(rest, doseq=True) if rest else "")
+                    self.send(303, "", extra={
+                        "Location": loc,
+                        "Set-Cookie": f"{cookie_name}={key}; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000",
+                    })
+                    return False
+                self.send(403, FORBIDDEN)
+                return False
+            jar = cookies.SimpleCookie()
+            try:
+                jar.load(self.headers.get("Cookie", ""))
+            except cookies.CookieError:
+                pass
+            morsel = jar.get(cookie_name)
+            if morsel is not None and secrets.compare_digest(morsel.value, key):
+                return True
+            self.send(403, FORBIDDEN)
+            return False
+
+        def do_HEAD(self):
+            self.do_GET()
+
+        def do_GET(self):
+            split = urllib.parse.urlsplit(self.path)
+            path = urllib.parse.unquote(split.path)
+            query = urllib.parse.parse_qs(split.query)
+
+            # Unauthenticated on purpose and reveals nothing: it is how `start` and `stop` tell
+            # this server from whatever else might hold the port.
+            if path == "/__health":
+                return self.send(200, json.dumps({"app": ME, "instance": instance}), "application/json")
+
+            if not self.authorized(query):
+                return
+            # Only authorised requests count as someone reading. An open tab's long poll lands
+            # here every few seconds, so a page left open keeps the server alive, which is right.
+            activity["last"] = time.monotonic()
+
+            if path == "/":
+                return self.send(200, render(content, REPORT, title))
+
+            if path.startswith("/view/"):
+                name = path[len("/view/"):]
+                ext = os.path.splitext(name)[1].lower()
+                # A mockup's own images, referenced relatively so the same files render from the
+                # spec repo, resolve under /view/ too and are served as plain files.
+                if ext and ext != ".html":
+                    return self.send_file(safe_path(content, name))
+                if not ext:
+                    name += ".html"
+                if name == REPORT:
+                    return self.send(302, "", extra={"Location": "/"})
+                if safe_path(content, name) is None:
+                    return self.send(404, "Not found", "text/plain; charset=utf-8")
+                return self.send(200, render(content, name, title))
+
+            if path.startswith("/files/"):
+                return self.send_file(safe_path(content, path[len("/files/"):]))
+
+            if path == "/__changed":
+                since = query.get("since", [""])[0]
+                try:
+                    wait = min(float(query.get("wait", [LONG_POLL_SECONDS])[0]), LONG_POLL_SECONDS)
+                except ValueError:
+                    wait = LONG_POLL_SECONDS
+                deadline = time.monotonic() + wait
+                sig = signature(content)
+                while sig == since and time.monotonic() < deadline:
+                    time.sleep(0.4)
+                    sig = signature(content)
+                return self.send(200, json.dumps({"sig": sig, "changed": sig != since}), "application/json")
+
+            return self.send(404, "Not found", "text/plain; charset=utf-8")
+
+    return Handler
+
+
+def serve(args):
+    content = os.path.join(args.dir, "content")
+    os.makedirs(content, exist_ok=True)
+    key = None
+    if args.key_file:
+        with open(args.key_file, encoding="utf-8") as f:
+            key = f.read().strip()
+    ThreadingHTTPServer.daemon_threads = True
+    activity = {"last": time.monotonic()}
+    try:
+        httpd = ThreadingHTTPServer((args.host, args.port), make_handler(
+            content, key, args.title, args.instance, args.port, activity))
+    except OSError as e:
+        print(f"{ME}: cannot bind {args.host}:{args.port}: {e}", file=sys.stderr, flush=True)
+        return 1
+    def on_term(*_):
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, on_term)
+    if args.idle_hours and args.idle_hours > 0:
+        threading.Thread(target=idle_watchdog, daemon=True,
+                         args=(args.dir, content, args.idle_hours, activity)).start()
+    print(f"{ME}: serving {content} on {args.host}:{args.port}", flush=True)
+    try:
+        httpd.serve_forever()
+    finally:
+        httpd.server_close()
+    return 0
+
+
+def idle_watchdog(base, content, hours, activity):
+    """Stop the server once nobody has read the page and nothing on it has changed for `hours`.
+
+    A content change counts as activity as well as a request, so a dashboard the agent is still
+    updating is not taken down just because the owner has not looked at it yet.
+    """
+    limit = hours * 3600
+    try:
+        interval = float(os.environ.get("SDD_DASHBOARD_IDLE_CHECK_SECONDS", "60"))
+    except ValueError:
+        interval = 60.0
+    sig = signature(content)
+    while True:
+        time.sleep(interval)
+        now_sig = signature(content)
+        if now_sig != sig:
+            sig = now_sig
+            activity["last"] = time.monotonic()
+        if time.monotonic() - activity["last"] >= limit:
+            record_stop(os.path.join(base, "state"), f"idle for {hours:g} hours")
+            print(f"{ME}: stopping, idle for {hours:g} hours", flush=True)
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
+
+
+def record_stop(state_dir, reason):
+    try:
+        with open(os.path.join(state_dir, "stopped"), "w", encoding="utf-8") as f:
+            json.dump({"reason": reason, "at": time.strftime("%Y-%m-%d %H:%M")}, f)
+    except OSError:
+        pass
+
+
+# ---- lifecycle ---------------------------------------------------------------------------------------
+class State:
+    def __init__(self, base):
+        self.base = base
+        self.content = os.path.join(base, "content")
+        self.state = os.path.join(base, "state")
+        self.config = os.path.join(self.state, "config.json")
+        self.key = os.path.join(self.state, "key")
+        self.pid = os.path.join(self.state, "server.pid")
+        self.instance = os.path.join(self.state, "instance")
+        self.log = os.path.join(self.state, "server.log")
+        self.stopped = os.path.join(self.state, "stopped")
+
+    def read_config(self):
+        try:
+            with open(self.config, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def write_config(self, cfg):
+        with open(self.config, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+
+    def read(self, path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return None
+
+    def running_pid(self):
+        """The recorded pid, only if that process is still this server.
+
+        A pid file survives a reboot and its number can be reused by anything, so the command line
+        must carry this start's instance id before the process is trusted, let alone signalled.
+        """
+        pid, instance = self.read(self.pid), self.read(self.instance)
+        if not pid or not pid.isdigit() or not instance:
+            return None
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return None
+        except PermissionError:
+            return None
+        try:
+            cmd = subprocess.run(["ps", "-ww", "-o", "command=", "-p", pid],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return int(pid) if f"--instance={instance}" in cmd else None
+
+
+def lan_ip():
+    """An address another machine on the LAN can reach.
+
+    `ip -4 route get 1` names the source address of the default route, which is the one that
+    matters. `hostname -I` is missing on several distros, so it is not used.
+    """
+    probes = (
+        (["ip", "-4", "route", "get", "1"], r"\bsrc\s+(\d+\.\d+\.\d+\.\d+)"),
+        (["ip", "-4", "-o", "addr", "show", "scope", "global"], r"\binet\s+(\d+\.\d+\.\d+\.\d+)"),
+    )
+    for cmd, rx in probes:
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        m = re.search(rx, out)
+        if m:
+            return m.group(1)
+    # macOS has no `ip`. Connecting a UDP socket sends nothing but makes the kernel pick the
+    # outbound interface, whose address is the answer.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 9))
+            addr = s.getsockname()[0]
+            if not addr.startswith("127."):
+                return addr
+    except OSError:
+        pass
+    return "localhost"
+
+
+def urls(st, cfg):
+    host, port = cfg["host"], cfg["port"]
+    shown = cfg.get("url_host") or (
+        lan_ip() if host in ("0.0.0.0", "::", "") else "localhost" if host in ("127.0.0.1", "localhost") else host)
+    suffix = ""
+    if cfg.get("key", True):
+        k = st.read(st.key)
+        if k:
+            suffix = "?key=" + k
+    primary = f"http://{shown}:{port}/{suffix}"
+    local = f"http://localhost:{port}/{suffix}"
+    return primary, local
+
+
+def probe(cfg, timeout=0.5):
+    host = "127.0.0.1" if cfg["host"] in ("0.0.0.0", "::", "") else cfg["host"]
+    try:
+        with urllib.request.urlopen(f"http://{host}:{cfg['port']}/__health", timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except Exception:  # noqa: BLE001 - any failure means "not this server"
+        return None
+
+
+def port_taken(cfg):
+    host = "127.0.0.1" if cfg["host"] in ("0.0.0.0", "::", "") else cfg["host"]
+    try:
+        with socket.create_connection((host, cfg["port"]), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def print_info(st, cfg, headline):
+    primary, local = urls(st, cfg)
+    print(f"{ME}: {headline}")
+    print(f"  url      {primary}")
+    if primary != local:
+        print(f"  local    {local}")
+    ends = []
+    if not cfg.get("keep_running"):
+        ends.append("when a Claude session in this project ends")
+    if cfg.get("idle_hours"):
+        ends.append(f"after {cfg['idle_hours']:g} idle hours")
+    print(f"  stops    {' or '.join(ends) if ends else 'only on sdd-dashboard stop'}")
+    print(f"  content  {st.content}")
+    print(f"  state    {st.state}")
+
+
+def cmd_start(st, args, project):
+    os.makedirs(st.content, exist_ok=True)
+    os.makedirs(st.state, mode=0o700, exist_ok=True)
+    saved = st.read_config()
+    cfg = {
+        "port": args.port or saved.get("port") or common.DEFAULT_PORT,
+        "host": args.host or saved.get("host") or common.DEFAULT_HOST,
+        "url_host": args.url_host if args.url_host is not None else saved.get("url_host", ""),
+        "key": (False if args.no_key else True if args.key else saved.get("key", True)),
+        # Stored as keep_running, not as the old stop_with_session. Configs written before the
+        # default flipped hold "stop_with_session": false only because that was the default, so
+        # reading it would silently keep every existing server alive past its session.
+        "keep_running": (True if args.keep_running else False if args.stop_with_session
+                         else saved.get("keep_running", False)),
+        "idle_hours": (args.idle_hours if args.idle_hours is not None
+                       else saved.get("idle_hours", common.DEFAULT_IDLE_HOURS)),
+        "project": common.project_name(project),
+    }
+
+    pid = st.running_pid()
+    if pid:
+        defaults = {"idle_hours": common.DEFAULT_IDLE_HOURS}
+        # The SessionEnd hook reads the saved choice when it fires, so binding or unbinding a
+        # running server needs no restart. Everything else is fixed when the process starts.
+        if cfg["keep_running"] != saved.get("keep_running", False) or "stop_with_session" in saved:
+            saved["keep_running"] = cfg["keep_running"]
+            saved.pop("stop_with_session", None)
+            st.write_config(saved)
+        current = dict(saved, project=saved.get("project", cfg["project"]))
+        print_info(st, current, f"already running (pid {pid})")
+        changed = [k for k in ("port", "host", "key", "idle_hours")
+                   if cfg[k] != saved.get(k, defaults.get(k))]
+        if changed:
+            print(f"  note     running with its saved {', '.join(changed)}; stop and start again to apply")
+        return 0
+
+    for stale in (st.pid, st.instance, st.stopped):
+        try:
+            os.unlink(stale)
+        except OSError:
+            pass
+
+    if port_taken(cfg):
+        print(f"{ME}: port {cfg['port']} is already in use by another process. "
+              f"Pick another with --port.", file=sys.stderr)
+        return 1
+
+    key_file = None
+    if cfg["key"]:
+        if not st.read(st.key):
+            fd = os.open(st.key, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(secrets.token_urlsafe(24))
+        key_file = st.key
+    st.write_config(cfg)
+
+    instance = secrets.token_hex(16)
+    with open(st.instance, "w") as f:
+        f.write(instance)
+    cmd = [sys.executable, os.path.realpath(__file__), "serve", "--dir", st.base,
+           "--port", str(cfg["port"]), "--host", cfg["host"], "--title", cfg["project"],
+           f"--instance={instance}", "--idle-hours", str(cfg["idle_hours"] or 0)]
+    if key_file:
+        cmd += ["--key-file", key_file]
+    with open(st.log, "ab") as log:
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                                cwd=st.base, start_new_session=True, close_fds=True)
+    with open(st.pid, "w") as f:
+        f.write(str(proc.pid))
+
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            break
+        health = probe(cfg)
+        if health and health.get("instance") == instance:
+            print_info(st, cfg, f"started (pid {proc.pid})")
+            return 0
+        time.sleep(0.1)
+
+    tail = (st.read(st.log) or "").splitlines()[-5:]
+    print(f"{ME}: the server did not come up. Last log lines:", file=sys.stderr)
+    for line in tail:
+        print(f"  {line}", file=sys.stderr)
+    if proc.poll() is None:
+        proc.terminate()
+    return 1
+
+
+def cmd_stop(st, if_session_bound=False):
+    if if_session_bound and st.read_config().get("keep_running"):
+        return 0
+    pid = st.running_pid()
+    if not pid:
+        for stale in (st.pid, st.instance):
+            try:
+                os.unlink(stale)
+            except OSError:
+                pass
+        print(f"{ME}: not running")
+        return 0
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(40):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(pid, signal.SIGKILL)
+        time.sleep(0.1)
+    for f in (st.pid, st.instance):
+        try:
+            os.unlink(f)
+        except OSError:
+            pass
+    record_stop(st.state, "session ended" if if_session_bound else "sdd-dashboard stop")
+    print(f"{ME}: stopped (pid {pid})")
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog=ME, description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("start", "stop", "status", "url", "path"):
+        p = sub.add_parser(name)
+        p.add_argument("--project", default=os.getcwd(), help="project checkout (default: cwd)")
+        p.add_argument("--dir", help="dashboard directory (default: resolved per project, or $SDD_DASHBOARD_DIR)")
+        if name == "start":
+            p.add_argument("--port", type=int, help=f"port (default {common.DEFAULT_PORT}, then the saved one)")
+            p.add_argument("--host", help=f"bind address (default {common.DEFAULT_HOST})")
+            p.add_argument("--url-host", help="host name to print in the URL instead of the detected address")
+            g = p.add_mutually_exclusive_group()
+            g.add_argument("--no-key", action="store_true", help="serve without an access key (trusted LAN only)")
+            g.add_argument("--key", action="store_true", help="require the access key again after --no-key")
+            w = p.add_mutually_exclusive_group()
+            w.add_argument("--keep-running", action="store_true",
+                           help="outlive the Claude session, for reading after it ends; saved")
+            w.add_argument("--stop-with-session", action="store_true",
+                           help="undo --keep-running: stop when a Claude session in this project ends (the default)")
+            p.add_argument("--idle-hours", type=float,
+                           help=f"stop after this many hours with no reader and no change "
+                                f"(default {common.DEFAULT_IDLE_HOURS}); 0 disables; saved")
+        if name == "stop":
+            p.add_argument("--if-session-bound", action="store_true",
+                           help="stop only a server not started with --keep-running (for the SessionEnd hook)")
+    s = sub.add_parser("serve", help=argparse.SUPPRESS)
+    s.add_argument("--dir", required=True)
+    s.add_argument("--port", type=int, required=True)
+    s.add_argument("--host", required=True)
+    s.add_argument("--title", default="dashboard")
+    s.add_argument("--instance", required=True)
+    s.add_argument("--key-file")
+    s.add_argument("--idle-hours", type=float, default=0)
+    args = ap.parse_args(argv)
+
+    if args.cmd == "serve":
+        return serve(args)
+
+    project = common.repo_root(os.path.abspath(args.project))
+    st = State(common.dashboard_dir(project, args.dir))
+
+    if args.cmd == "path":
+        print(st.base)
+        return 0
+    if args.cmd == "start":
+        return cmd_start(st, args, project)
+    if args.cmd == "stop":
+        return cmd_stop(st, args.if_session_bound)
+
+    cfg = st.read_config()
+    pid = st.running_pid()
+    if args.cmd == "url":
+        if not cfg:
+            print(f"{ME}: never started for this project", file=sys.stderr)
+            return 1
+        print(urls(st, cfg)[0])
+        if not pid:
+            print(f"{ME}: not running; start it with `sdd-dashboard start`", file=sys.stderr)
+            return 1
+        return 0
+    # status
+    if pid and cfg:
+        print_info(st, cfg, f"running (pid {pid})")
+        return 0
+    print(f"{ME}: not running")
+    try:
+        with open(st.stopped, encoding="utf-8") as f:
+            last = json.load(f)
+        print(f"  stopped  {last.get('at', '?')}, {last.get('reason', 'unknown reason')}")
+    except (OSError, ValueError):
+        pass
+    print(f"  state    {st.state}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,50 @@
+{
+  "name": "/sdd:quick: one dated entry, verified, and no second pipeline",
+  "fixture": "specrepo-withtasks.sh",
+  "prompt": "/sdd:quick make healthz() in src/main.py return a \"version\" key alongside \"status\", because the operator dashboard needs to tell deployments apart. Verify with: python3 -c \"import sys; sys.path.insert(0,'src'); import main; assert 'version' in main.healthz(), main.healthz(); print('ok', main.healthz())\"",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(mkdir:*)",
+    "Bash(python3:*)"
+  ],
+  "artefact": ".specs/docs/quick-log.md",
+  "graders": [
+    {
+      "id": "has-a-dated-entry",
+      "must_match": "(?m)^##\\s+20\\d\\d-\\d\\d-\\d\\d",
+      "why": "a dated entry is the whole artefact; without the date the log cannot be read chronologically"
+    },
+    {
+      "id": "records-the-why",
+      "must_match": "(?i)\\*\\*Why:?\\*\\*",
+      "why": "the reason is the only part a diff cannot recover later"
+    },
+    {
+      "id": "records-a-verification",
+      "must_match": "(?i)\\*\\*Verification:?\\*\\*.*`",
+      "why": "a fast lane that skips verification is just an undocumented change"
+    },
+    {
+      "id": "verification-actually-ran",
+      "must_match": "ok \\{",
+      "why": "the entry must quote the command's own output; the printed form is `ok {...}`, which an entry that merely mentions the command cannot produce"
+    },
+    {
+      "id": "no-status-field",
+      "must_not_match": "(?im)^\\*\\*Status:\\*\\*",
+      "why": "a status field means it has become a task file, which is the thing the fast lane exists to avoid"
+    },
+    {
+      "id": "no-progress-table",
+      "must_not_match": "(?i)(Progress Summary|\\| Step \\|)",
+      "why": "a progress table means it has become a second pipeline"
+    }
+  ]
+}

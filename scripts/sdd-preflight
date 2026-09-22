@@ -1,0 +1,368 @@
+#!/usr/bin/env sh
+# Check the machine contract: the things that must be true of a machine before this suite works,
+# each of which fails silently rather than loudly.
+#
+# Why POSIX sh and not bash, which every other script here uses: bash is one of the things this
+# checks for. A script that cannot run without bash cannot tell you bash is missing, and on a
+# stripped container that is exactly the machine you are standing on.
+#
+# Why it never exits on the first problem: a fresh machine has several at once. A script that
+# stops at the first one reports a single problem per run, so fixing three takes three runs and
+# you learn the shape of the job only at the end. Everything is collected, then printed.
+#
+# Why jq is used for one write and nothing else: jq is itself a checked prerequisite, so the
+# checks cannot depend on it. Only --otel-endpoint needs to edit JSON, and that is refused with
+# an explanation when jq is absent rather than attempted with sed.
+#
+# Why two tiers. This script used to refuse a machine over four things that are one person's
+# preference: ignoring CLAUDE.md and .claude globally, having a personal ~/.claude/CLAUDE.md, and
+# having curl for telemetry that is optional in the plugin that uses it. Two of those actively
+# contradicted the suite's own advice, since /sdd:bootstrap writes a project .claude/settings.json
+# that is meant to be committed and travel. A setup script that refuses the configuration its own
+# suite recommends is a script you argue with and then stop running, so the preferences are still
+# reported and no longer decide the exit status.
+#
+# Needs: sh and git. Everything else is reported, not required.
+set -u
+
+fix=0
+fix_rec=0
+otel=""
+with_agy=0
+list=0
+me="sdd-preflight"
+
+die() { printf '%s: %s\n' "$me" "$1" >&2; exit 2; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --fix) fix=1 ;;
+    --fix-recommended) fix=1; fix_rec=1 ;;
+    --list) list=1 ;;
+    --with-agy) with_agy=1 ;;
+    --otel-endpoint) shift; [ $# -gt 0 ] || die "--otel-endpoint needs a URL"; otel="$1" ;;
+    --otel-endpoint=*) otel="${1#--otel-endpoint=}" ;;
+    -h|--help)
+      cat <<'USAGE'
+sdd-preflight [--fix] [--fix-recommended] [--with-agy] [--otel-endpoint URL]
+
+Checks what a machine must provide for this suite to work, and reports every gap in one pass.
+
+Two tiers. A required gap exits 1, because its absence breaks something silently. A
+recommended one never affects the exit status: it is a preference, reported with the
+command that satisfies it so you can decide.
+
+  --list                print the machine contract and exit. This is the one enumeration;
+                        anything that documents it should quote this, not restate it
+  --fix                 repair what this script owns in the required tier: the .specs
+                        ignore entry. Inside a repository it goes in that repository's own
+                        .gitignore, so it travels to everyone who clones; outside one it
+                        goes where git already reads globally, else to the path git reads
+                        with no configuration at all
+  --fix-recommended     also write the recommended entries and a starter ~/.claude/CLAUDE.md
+                        when there is none. Separate from --fix on purpose: these are
+                        preferences, and a script that edits your preferences unasked is one
+                        you stop running
+  --with-agy            also check what the Antigravity exporter needs
+  --otel-endpoint URL   write the telemetry environment into ~/.claude/settings.json.
+                        Refused when another tool manages that file
+
+Exit 0 when nothing required is outstanding, 1 when something is, 2 on a usage error.
+USAGE
+      exit 0 ;;
+    *) die "unexpected argument: $1" ;;
+  esac
+  shift
+done
+
+# ---- the contract ---------------------------------------------------------
+# The single enumeration of what a machine must provide. `--list` prints it, the checks below
+# implement it, and each check carries a `# contract: <id>` marker. test-preflight.sh asserts the
+# two sides match, so a prerequisite cannot be described without being checked, or checked without
+# being described. That mechanical link is the point: a guide that restates this list by hand is
+# the drift this suite exists to catch, one layer up.
+#
+# Fields are pipe separated: id, tier, what must be true, what its absence looks like.
+#
+# There is deliberately no entry for core.excludesfile. It is one of three places git looks for a
+# global ignore, and requiring it was testing a mechanism rather than an outcome: a machine whose
+# only global ignore is ~/.config/git/ignore needs no such setting and was being failed for it.
+# `ignore-specs` now asks git the question instead, which is what check-spec-ignore.sh already did.
+contract() {
+  cat <<'EOT'
+ignore-specs|required|git ignores .specs in this repo, by any mechanism: the repo's own .gitignore, a global ignore file, or .git/info/exclude|Nothing errors. .specs shows as untracked and the nested spec-repo model quietly stops holding. Outside a repository this is only a recommendation, since each project may answer it locally
+cmd-git|required|git is installed|Nothing in this suite works
+cmd-bash|required|bash is installed|Every hook here is a bash script, so hooks stop running
+cmd-jq|required|jq is installed|The Stop hook no-ops, so the spec-repo commit policy stops being enforced and looks fine
+settings-valid|required|~/.claude/settings.json parses|Every rule in it is inactive, silently
+ignore-claude-md|recommended|a new repository would ignore CLAUDE.md|A project CLAUDE.md becomes committable by accident. Some teams want it committed, which is why this is a preference
+ignore-claude-dir|recommended|a new repository would ignore .claude|Project-local settings become committable by accident. /sdd:bootstrap writes one that is meant to travel, so this cuts both ways
+cmd-curl|recommended|curl is installed|Telemetry stops reporting. Telemetry is optional in the plugin that sends it
+plugins-enabled|recommended|sdd is installed and enabled|The commands and skills are simply absent
+personal-layer|recommended|~/.claude/CLAUDE.md exists|No personal instruction layer; only the plugin-delivered practice rules apply
+EOT
+}
+
+if [ "$list" -eq 1 ]; then
+  printf 'The machine contract\n'
+  for tier in required recommended; do
+    if [ "$tier" = required ]; then
+      printf '\nrequired: a gap in any of these exits 1\n\n'
+    else
+      printf '\nrecommended: reported, never fatal\n\n'
+    fi
+    contract | while IFS='|' read -r id t what symptom; do
+      [ "$t" = "$tier" ] || continue
+      printf '  %-18s %s\n' "$id" "$what"
+      printf '  %-18s if absent: %s\n\n' "" "$symptom"
+    done
+  done
+  exit 0
+fi
+
+gaps=0; recs=0; fixed=0; kept=0
+gap()  { printf '  GAP     %s\n' "$1"; gaps=$((gaps+1)); }
+rec()  { printf '  advise  %s\n' "$1"; recs=$((recs+1)); }
+did()  { printf '  ADDED   %s\n' "$1"; fixed=$((fixed+1)); }
+note() { printf '  ok      %s\n' "$1"; kept=$((kept+1)); }
+info() { printf '  info    %s\n' "$1"; }
+deny() { printf '  REFUSED %s\n' "$1"; gaps=$((gaps+1)); }
+
+printf '%s: %s\n' "$me" "${HOME:-<no HOME>}"
+
+# ---- 1. is .specs ignored --------------------------------------------------
+# First because it is the least visible and the most damaging. Without `.specs` ignored nothing
+# errors: the nested spec repo simply shows as untracked, and the model the whole suite is built
+# on quietly stops holding.
+#
+# **Asked of the repository you are standing in, when there is one.** An earlier version asked in
+# a throwaway repository instead, so that the answer was about the machine rather than the project,
+# and a per-project `.gitignore` holding `.specs` did not count. That was the same mistake this
+# script was being corrected for, moved one level down: it took one legitimate way of arranging
+# this, a global ignore file, and made it the only one that passed. A `.specs` line in the
+# project's own `.gitignore` is a complete answer, it is the answer that travels with the
+# repository to everyone who clones it, and it is what check-spec-ignore.sh has always accepted.
+#
+# Outside a repository there is no project to ask about, so the throwaway probe answers the weaker
+# question, "would a NEW repository ignore it", and a miss there is a recommendation rather than a
+# gap. Per-project entries are a real answer, and a setup command cannot see them from here.
+printf '\nignoring .specs\n'
+
+# `git check-ignore` consults every .gitignore, core.excludesFile and .git/info/exclude, so it
+# answers "is this ignored by anything" rather than testing one mechanism. Which one is doing the
+# ignoring does not matter; that something is, does.
+here_repo=$(git rev-parse --show-toplevel 2>/dev/null || true)
+
+probe=$(mktemp -d 2>/dev/null) || probe=""
+if [ -n "$probe" ]; then
+  git -C "$probe" init -q 2>/dev/null || probe=""
+fi
+[ -n "$probe" ] && trap 'rm -rf "$probe"' EXIT
+
+# In this repository if there is one, otherwise in the throwaway.
+ignored() {
+  if [ -n "$here_repo" ]; then
+    git -C "$here_repo" check-ignore -q -- "$1" 2>/dev/null
+  elif [ -n "$probe" ]; then
+    git -C "$probe" check-ignore -q -- "$1" 2>/dev/null
+  else
+    return 1
+  fi
+}
+# The machine-wide answer, always from the throwaway: used to say whether a new repository would
+# inherit the rule, which is information rather than a verdict.
+ignored_anywhere() {
+  [ -n "$probe" ] || return 1
+  git -C "$probe" check-ignore -q -- "$1" 2>/dev/null
+}
+# Which file supplied the rule. Worth printing: "your project's .gitignore" and "a global ignore
+# file" are both passes and they have different consequences for the next project.
+ignored_by() {
+  [ -n "$here_repo" ] || return 1
+  git -C "$here_repo" check-ignore -v -- "$1" 2>/dev/null | cut -d: -f1
+}
+
+# git stores this value verbatim, so a configured `~/.gitignore_global` arrives as a literal
+# tilde that nothing has expanded. The quoted pattern is matching those two characters on
+# purpose, which is the opposite of the mistake SC2088 detects. git itself expands the value
+# when it reads it, so this expansion is only for the writing and reporting below.
+# shellcheck disable=SC2088
+excl=$(git config --global core.excludesfile 2>/dev/null || true)
+case "$excl" in "~/"*) excl="$HOME/${excl#\~/}" ;; esac
+
+# Where --fix writes. In a repository, the repository's own .gitignore: it is the narrowest place
+# that answers the question, it needs no configuration, and it travels to everyone who clones.
+# Outside one, whatever git already reads globally, else the path git reads with no configuration.
+xdg_ignore="${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore"
+global_target=${excl:-$xdg_ignore}
+if [ -n "$here_repo" ]; then
+  target="$here_repo/.gitignore"
+else
+  target="$global_target"
+fi
+
+add_entry() {
+  d=$(dirname "$2")
+  [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || return 1
+  printf '%s\n' "$1" >> "$2" || return 1
+}
+
+# contract: ignore-specs
+if [ -z "$here_repo" ] && [ -z "$probe" ]; then
+  gap "not in a git repository and could not create a temporary one, so nothing could be checked"
+elif ignored .specs; then
+  by=$(ignored_by .specs)
+  if [ -n "$here_repo" ]; then
+    note "this repo ignores .specs (${by:-a rule git found})"
+    # A project-local rule is a complete answer here and covers nothing else. Say so, because the
+    # next project is where someone discovers it the hard way.
+    if ! ignored_anywhere .specs; then
+      info "  that rule is local to this repo; a new project needs its own, or a global entry"
+    fi
+  else
+    note "a new repository would ignore .specs"
+  fi
+elif [ "$fix" -eq 1 ] && add_entry .specs "$target"; then
+  # Read back rather than trust the write: the point of this check is that a wrong answer here
+  # is silent, and that applies to the repair as much as to the diagnosis.
+  if ignored .specs; then did ".specs ignored, via $target"
+  else gap "wrote .specs to $target and git still does not ignore it"; fi
+elif [ -n "$here_repo" ]; then
+  gap ".specs is not ignored in this repo, so git will offer to commit the spec tree"
+  info "  --fix appends it to $target, which then travels with the repo"
+  info "  or put it in a global ignore: $global_target"
+else
+  # Not in a repository. Nothing is broken yet; this only says what a new project would inherit.
+  rec "no global ignore of .specs, so each project needs its own entry"
+  info "  printf '%s\\n' .specs >> $global_target   covers every project at once"
+  info "  or add .specs to each project's own .gitignore, which travels with it"
+fi
+
+# contract: ignore-claude-md ignore-claude-dir
+# Global only, and advisory. These are about not committing a personal file by accident, which is
+# a machine-wide habit rather than a property of one repository.
+for entry in CLAUDE.md .claude; do
+  if ignored_anywhere "$entry"; then
+    note "a new repository would ignore $entry"
+  elif [ "$fix_rec" -eq 1 ] && add_entry "$entry" "$global_target"; then
+    did "$entry ignored globally, via $global_target"
+  else
+    rec "$entry is not ignored globally. printf '%s\\n' '$entry' >> $global_target"
+  fi
+done
+
+# ---- 2. binaries -----------------------------------------------------------
+# Reported with the command that installs them, because the whole reason this is a script and
+# not a synced file is that the answer differs per platform.
+printf '\ncommands\n'
+case "$(uname -s 2>/dev/null)" in
+  Darwin) pm="brew install" ;;
+  Linux)  if [ -e /etc/arch-release ]; then pm="pacman -S"
+          elif [ -e /etc/debian_version ]; then pm="apt install"
+          else pm="your package manager" ; fi ;;
+  *)      pm="your package manager" ;;
+esac
+# contract: cmd-git cmd-bash cmd-jq
+# No python3: the span exporter is a shell hook, so Antigravity telemetry needs nothing
+# beyond what the suite already requires.
+need="git bash jq"
+[ "$with_agy" -eq 1 ] && need="$need agy"
+for c in $need; do
+  if command -v "$c" >/dev/null 2>&1; then note "$c"; else gap "$c is missing: $pm $c"; fi
+done
+# contract: cmd-curl
+if command -v curl >/dev/null 2>&1; then note "curl"; else rec "curl is missing: $pm curl. Only telemetry needs it"; fi
+
+# ---- 3. user settings ------------------------------------------------------
+# Telemetry is the only thing written here, and only when asked. Everything else in this file is
+# either written by Claude Code itself or is a personal preference this script has no business
+# inventing.
+printf '\nuser settings\n'
+settings="$HOME/.claude/settings.json"
+managed=0
+if command -v chezmoi >/dev/null 2>&1; then
+  if chezmoi managed 2>/dev/null | grep -q '\.claude/settings\.json'; then managed=1; fi
+fi
+[ "$managed" -eq 1 ] && info "another tool manages settings.json; this script will not write it"
+
+if [ -e "$settings" ]; then
+  if command -v jq >/dev/null 2>&1; then
+    # contract: settings-valid
+    if jq -e . "$settings" >/dev/null 2>&1; then note "settings.json is valid JSON"
+    else gap "settings.json is not valid JSON, so every rule in it is inactive"; fi
+  else
+    info "settings.json present, not checked: jq is missing"
+  fi
+  # contract: plugins-enabled
+  # Only sdd. The other plugins in this marketplace are optional and have their own session-start
+  # checks; naming them here would be noise in an install that deliberately took one plugin.
+  if grep -q '"sdd@' "$settings" 2>/dev/null; then note "plugin sdd enabled"
+  else rec "plugin sdd not enabled: /plugin install sdd@<marketplace>"; fi
+else
+  info "no settings.json yet. /plugin install writes one, so this is expected before step 2"
+fi
+
+if [ -n "$otel" ]; then
+  if [ "$managed" -eq 1 ]; then
+    deny "telemetry: $settings is managed elsewhere. Set it there, not here"
+  elif ! command -v jq >/dev/null 2>&1; then
+    gap "telemetry needs jq to edit JSON safely; install jq and re-run"
+  elif [ "$fix" -eq 0 ]; then
+    gap "telemetry endpoint not written: re-run with --fix"
+  else
+    mkdir -p "$HOME/.claude"
+    [ -e "$settings" ] || printf '{}\n' > "$settings"
+    tmp=$(mktemp) || die "could not create a temporary file"
+    if jq --arg e "$otel" '.env = ((.env // {}) + {
+          CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+          OTEL_METRICS_EXPORTER: "otlp",
+          OTEL_LOGS_EXPORTER: "otlp",
+          OTEL_TRACES_EXPORTER: "otlp",
+          OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+          OTEL_EXPORTER_OTLP_ENDPOINT: $e
+        })' "$settings" > "$tmp" 2>/dev/null && mv "$tmp" "$settings"; then
+      # Read back rather than trust the write: a settings.json left unparseable disables every
+      # rule in it, silently.
+      if jq -e . "$settings" >/dev/null 2>&1; then did "telemetry endpoint $otel"
+      else deny "telemetry: wrote $settings and it is no longer valid JSON. Restore it"; fi
+    else
+      rm -f "$tmp"; gap "telemetry: could not write $settings"
+    fi
+  fi
+fi
+
+# ---- 4. the personal layer -------------------------------------------------
+# Written when asked, diffed when present, never edited. A tool that rewrites a personal file is
+# a tool you stop running, and the diff is what makes this useful on a machine already working.
+printf '\npersonal instructions\n'
+starter="$(cd "$(dirname "$0")" && pwd)/claude-md-starter.md"
+# contract: personal-layer
+cmd="$HOME/.claude/CLAUDE.md"
+if [ ! -s "$cmd" ]; then
+  if [ "$fix_rec" -eq 1 ] && [ -r "$starter" ]; then
+    mkdir -p "$HOME/.claude" && cp "$starter" "$cmd" && did "starter CLAUDE.md"
+  else
+    rec "no ~/.claude/CLAUDE.md. --fix-recommended writes a neutral starter"
+  fi
+elif [ -r "$starter" ]; then
+  missing=0
+  while IFS= read -r h; do
+    # Case-insensitive: a heading is the same section whether or not the user capitalises it,
+    # and an exact match reports a file that covers the ground as covering none of it.
+    grep -qixF "$h" "$cmd" 2>/dev/null || missing=$((missing+1))
+  done <<EOT
+$(grep '^## ' "$starter" 2>/dev/null)
+EOT
+  if [ "$missing" -gt 0 ]; then
+    [ "$missing" -eq 1 ] && verb=is || verb=are
+    info "CLAUDE.md differs from the starter: $missing of its sections $verb absent"
+    info "  compare with: diff -u \"$starter\" \"$cmd\""
+  else
+    note "CLAUDE.md covers every starter section"
+  fi
+fi
+
+printf '\n%s: %d required gaps, %d recommendations, %d fixed, %d already present\n' \
+  "$me" "$gaps" "$recs" "$fixed" "$kept"
+[ "$recs" -gt 0 ] && printf '%s: recommendations never affect the exit status. --fix-recommended writes them\n' "$me"
+[ "$gaps" -eq 0 ]

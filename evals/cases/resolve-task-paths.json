@@ -1,0 +1,51 @@
+{
+  "name": "sdd:resolve-task-paths: reads the Task Workflow keys",
+  "fixture": "specrepo.sh",
+  "prompt": "Invoke the sdd:resolve-task-paths skill for this project. Report the resolved PRD path, the specs directory, the tasks directory, whether a nested spec repo was detected, and which persistence model this project's documents follow. Do not write any files.",
+  "allowed_tools": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)"
+  ],
+  "extract": "raw",
+  "graders": [
+    {
+      "id": "prd-path",
+      "must_match": "\\.specs/docs/PRD\\.md",
+      "why": "it must resolve the PRD from the Task Workflow section"
+    },
+    {
+      "id": "specs-dir",
+      "must_match": "\\.specs/docs/specs",
+      "why": "the specs directory is one of the keys it exists to resolve"
+    },
+    {
+      "id": "tasks-dir",
+      "must_match": "\\.specs/docs/tasks",
+      "why": "the tasks directory is one of the keys it exists to resolve"
+    },
+    {
+      "id": "detects-spec-repo",
+      "must_match": "(?i)(\\.specs/\\.git|spec repo[^.\\n]{0,40}\\b(yes|present|found|exists)|\\byes\\b[^.\\n]{0,30}spec repo)",
+      "why": "it must answer the question, not repeat it; the prompt already says 'spec repo was detected'"
+    },
+    {
+      "id": "no-superpowers-default",
+      "must_not_match": "docs/superpowers",
+      "why": "it must never fall back to that path; the rules forbid it"
+    },
+    {
+      "id": "reports-the-model",
+      "must_match": "(?i)flow-back",
+      "why": "the fixture's CLAUDE.md declares no Spec Model, so the default has to fire and be named. A skill that reports the paths and goes quiet about the model leaves every command downstream to assume one"
+    },
+    {
+      "id": "says-it-was-defaulted",
+      "must_match": "(?i)(default|not declared|no .{0,20}spec model|absent|unset|implicit|falls? back)",
+      "why": "a model that was defaulted and one that was chosen should produce the same behaviour and a different report. The owner cannot tell whether the project ever decided this unless the skill says which happened"
+    }
+  ]
+}

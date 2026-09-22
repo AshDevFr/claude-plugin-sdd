@@ -1,0 +1,53 @@
+{
+  "name": "sdd:task-template: the generated task keeps its structure and a Verification command",
+  "fixture": "specrepo.sh",
+  "prompt": "Invoke the sdd:task-template skill, then write a task file for a task called \"Add the health check endpoint\" to .specs/docs/tasks/phase-1/1.01-health-check.md. Follow the template. Write the file and stop; you do not need to print it.",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(cat:*)",
+    "Bash(ls:*)",
+    "Bash(mkdir:*)"
+  ],
+  "graders": [
+    {
+      "id": "status-header",
+      "must_match": "(?im)^\\*\\*Status:\\*\\*",
+      "why": "required structure"
+    },
+    {
+      "id": "verification-field",
+      "must_match": "(?im)^\\*\\*Verification:\\*\\*\\s*`[^`]+`",
+      "why": "the Verification field is mandatory and enforced by a Stop hook; a task without one is refused"
+    },
+    {
+      "id": "verification-not-placeholder",
+      "must_not_match": "(?im)^\\*\\*Verification:\\*\\*\\s*`\\[",
+      "why": "a placeholder is not a verification, and the gate refuses it"
+    },
+    {
+      "id": "progress-summary-table",
+      "must_match": "(?is)Progress Summary.{0,400}\\|\\s*Step\\s*\\|",
+      "why": "required structure"
+    },
+    {
+      "id": "acceptance-criteria",
+      "must_match": "(?i)## Acceptance Criteria",
+      "why": "required structure"
+    },
+    {
+      "id": "progress-notes",
+      "must_match": "(?i)## Progress Notes",
+      "why": "the append-only log is what survives the session"
+    },
+    {
+      "id": "verification-can-fail",
+      "must_not_match": "(?im)^\\*\\*Verification:\\*\\*\\s*`(true|:|echo\\b|exit 0|/bin/true)",
+      "why": "a command that cannot fail satisfies the enforcement hook while proving nothing. Three separate runs produced or accepted exactly that, and the hook cannot tell a real test from a tautology"
+    }
+  ],
+  "artefact": ".specs/docs/tasks/phase-1/1.01-health-check.md"
+}

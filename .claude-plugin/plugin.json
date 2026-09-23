@@ -1,6 +1,6 @@
 {
   "name": "sdd",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "description": "Spec-driven development workflow: commands and skills for turning a PRD into per-phase specs, specs into task files, and task files into implemented, tracked work. Carries a Stop hook that refuses to end a turn while the nested spec repo has uncommitted work. Functions on its own.",
   "author": {
     "name": "Sylvain Cau",

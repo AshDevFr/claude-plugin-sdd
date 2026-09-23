@@ -49,7 +49,7 @@ without being asked is not only allowed but required:
 A worktree never contains `.specs`: it is gitignored, so `git worktree add` does not carry it.
 An agent dispatched into one cannot read a brief that lives there, and the failure is quiet
 because the directory is simply absent. Three modes, created by
-`@PLUGIN_ROOT@/scripts/sdd-worktree`:
+`@PLUGIN_ROOT@/bin/sdd-worktree`:
 
 | `--specs=` | What it does | Concurrency |
 |---|---|---|
@@ -58,7 +58,7 @@ because the directory is simply absent. Three modes, created by
 | **`worktree`** | A worktree of the spec repo on its own branch, so the spec tree is independent. | Safe for concurrent writers. Needs a merge back, which the script does not do for you. |
 
 ```sh
-@PLUGIN_ROOT@/scripts/sdd-worktree <branch> [path] [--specs=none|link|worktree]
+@PLUGIN_ROOT@/bin/sdd-worktree <branch> [path] [--specs=none|link|worktree]
 ```
 
 `none` is the default because it is the only mode with no concurrency hazard.

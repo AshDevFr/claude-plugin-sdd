@@ -12,7 +12,7 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=scripts/plugin-root.sh
 . "$here/plugin-root.sh"
-wt="$SDD_PLUGIN/scripts/sdd-worktree"
+wt="$SDD_PLUGIN/bin/sdd-worktree"
 guard="$SDD_PLUGIN/hooks/spec-repo-guard.sh"
 [ -x "$wt" ] || { echo "FAIL: $wt is not executable"; exit 1; }
 

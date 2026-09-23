@@ -3,8 +3,17 @@
 **Beacon**, a static incident status page rendered from one TOML file by a small CLI. It is here
 to be read and to be run, not to be depended on.
 
+`sdd-demo` lives in the plugin's `bin/`, which Claude Code puts on the `PATH` of the shell it runs
+commands in, so it is a bare command inside a session and unknown in your own terminal. From the
+Claude Code prompt:
+
+```
+! sdd-demo ~/tmp/beacon      # materialise it, no network needed
+```
+
+then, in a terminal:
+
 ```sh
-sdd-demo ~/tmp/beacon      # materialise it, no network needed
 cd ~/tmp/beacon && claude
 /sdd:next-task
 ```

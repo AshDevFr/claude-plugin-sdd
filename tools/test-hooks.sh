@@ -213,7 +213,7 @@ if [ -r "$prac" ]; then
   grep -qi 'unsafe for two writers' "$prac" \
     && { echo "  PASS  the practices skill warns that link is unsafe for writers"; pass=$((pass+1)); } \
     || { echo "  FAIL  the practices skill lost the concurrency warning"; fail=$((fail+1)); }
-  grep -q 'scripts/sdd-worktree' "$prac" \
+  grep -q 'bin/sdd-worktree' "$prac" \
     && { echo "  PASS  the practices skill names the worktree script"; pass=$((pass+1)); } \
     || { echo "  FAIL  the practices skill does not name sdd-worktree"; fail=$((fail+1)); }
 else

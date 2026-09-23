@@ -18,7 +18,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/plugin-root.sh"
 repo=$(cd "$here/.." && pwd)
 demo="$SDD_PLUGIN/demo"
-sdd_demo="$SDD_PLUGIN/scripts/sdd-demo"
+sdd_demo="$SDD_PLUGIN/bin/sdd-demo"
 
 [ -x "$sdd_demo" ] || { echo "FAIL: $sdd_demo is not executable"; exit 1; }
 

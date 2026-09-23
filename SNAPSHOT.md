@@ -6,9 +6,9 @@ host.
 
 | | |
 |---|---|
-| Plugin version | `0.42.0` |
-| Source commit | `0c6f17494e2c84291e303417ae13b731cb65a965` |
-| Taken on | 2026-09-22 |
+| Plugin version | `0.43.0` |
+| Source commit | `4c8eba9c1e55569d58884b3591c5916d38a450fd` |
+| Taken on | 2026-09-23 |
 
 **Do not send changes here.** They would be overwritten by the next snapshot, silently, because
 the snapshot replaces this tree wholesale rather than merging into it. Raise them against the
@@ -25,7 +25,7 @@ From a clean checkout of the source repository:
 ```sh
 scripts/snapshot-sdd.sh <path-to-this-checkout>
 git -C <path-to-this-checkout> add -A
-git -C <path-to-this-checkout> commit -m "snapshot: sdd 0.42.0"
+git -C <path-to-this-checkout> commit -m "snapshot: sdd 0.43.0"
 ```
 
 It refuses a dirty source tree, because a recorded commit that does not contain what was published

@@ -49,7 +49,7 @@ say() { printf '%s\n' "$*"; }
 # the shipped directories is also the honest scope, since a harness is not something a colleague
 # is told to follow.
 scan=()
-for d in commands skills hooks scripts demo .claude-plugin; do
+for d in commands skills hooks bin scripts demo .claude-plugin; do
   [ -e "$plugin/$d" ] && scan+=("$plugin/$d")
 done
 [ -e "$plugin/README.md" ] && scan+=("$plugin/README.md")

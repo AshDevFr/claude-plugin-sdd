@@ -20,15 +20,30 @@ specific agent, so nothing dangles if you install nothing else.
 
 ## Install
 
+From a terminal, before you start a session:
+
+```sh
+claude plugin marketplace add AshDevFr/claude-plugin-sdd
+claude plugin install sdd@sdd
 ```
-/plugin marketplace add <owner>/<repo>
-/plugin install sdd@<marketplace>
+
+Then, inside a session:
+
+```
 /sdd:preflight
 ```
 
-`claude plugin marketplace add` takes a URL, a path, or a GitHub `owner/repo`, so a public
-marketplace needs no key and no SSH agent. There is no clone step: the scripts ship inside the
-plugin and are on your `PATH` once it is installed.
+`claude plugin marketplace add` takes a URL, a path, or a GitHub `owner/repo`, so this one needs
+no key and no SSH agent. `sdd@sdd` reads as *the plugin `sdd`, from the marketplace `sdd`*: this
+repository is a one-plugin marketplace, and the two carry the same name. If you installed it from
+a different marketplace, put that marketplace's name after the `@`.
+
+There is no clone step and nothing to put on your `PATH` by hand: the scripts ship inside the
+plugin. **Where they are reachable from is worth being exact about**, because it is not your
+terminal. Claude Code puts an installed plugin's `bin/` on the `PATH` of the shell *it* runs
+commands in, so `sdd-demo` and `sdd-worktree` are bare commands inside a session and unknown
+outside one. Prefix them with `!` to run one from the Claude Code prompt. Everything else the
+plugin ships is reached through the `/sdd:*` command that wraps it.
 
 **`sdd` assumes nothing about your git transport.** A marketplace is a git URL, and a spec repo
 inherits whatever the code repo's `origin` already uses, so HTTPS, SSH and a local path are all
@@ -54,8 +69,11 @@ the commit policy needs. And `/sdd:spec-repo-init` if the project should have a 
 Ten minutes, on a real project, before you commit to anything. `sdd-demo` materialises a complete
 example with no network access at all: its two histories ship inside the plugin as git bundles.
 
-```sh
-sdd-demo ~/tmp/beacon
+It ships in the plugin's `bin/`, so run it **from a Claude Code session**, where that directory is
+on the `PATH`. At the prompt, `!` runs the rest of the line as a shell command:
+
+```
+! sdd-demo ~/tmp/beacon
 ```
 
 ```
